@@ -91,18 +91,14 @@ add_id_constrained(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
     Comment = <<"comment">>,
     Constraints = [confirm, {lifetime, 1}],
-    lists:foreach(
-      fun (C) ->
-	      #'ECPrivateKey'{publicKey = PK} = ECkey =
-		  public_key:generate_key(C),
-	      ok = essh_agentc:add_id_constrained(Agent, ECkey, Comment, Constraints),
-	      {ok, [{{ #'ECPoint'{point = PK}, C}, Comment}]} =
-		  essh_agentc:request_identities(Agent),
-	      timer:sleep(1500),
-	      {ok, []} = essh_agentc:request_identities(Agent)
-      end, [{namedCurve, ?'id-Ed25519'},
-	    {namedCurve, ?secp384r1},
-	    {namedCurve, ?secp521r1}]).
+    C = {namedCurve, ?'id-Ed25519'},
+    #'ECPrivateKey'{publicKey = PK} = ECkey =
+	public_key:generate_key(C),
+    ok = essh_agentc:add_id_constrained(Agent, ECkey, Comment, Constraints),
+    {ok, [{{ #'ECPoint'{point = PK}, C}, Comment}]} =
+	essh_agentc:request_identities(Agent),
+    timer:sleep(timer:seconds(2)),
+    {ok, []} = essh_agentc:request_identities(Agent).
 
 
 add_smartcard_key(Config) ->
@@ -186,7 +182,7 @@ start_openssh_agent(Config) ->
 		     end),
     Pid ! {os_pid, self()},
     OsPid = receive {os_pid, P} -> P end,
-    timer:sleep(200),
+    timer:sleep(300),
     [{agent_sock_path, SshAuthSock}, {agent_os_pid, OsPid}| Config].
 
 
