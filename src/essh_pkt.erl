@@ -2,9 +2,11 @@
 
 -export([dec_signature_key/1,
 	 enc_signature_key/1,
+	 enc_private_key_cert/1,
 	 enc_private_key/1]).
 
--export([enc_cert/1, dec_cert/1]).
+-export([enc_cert/1, dec_cert/1, digest_type/1, enc_tbs/1, key_type/1,
+	 oid2curvename/1, mpint/1, dec_sig/1]).
 
 -include_lib("public_key/include/public_key.hrl").
 
@@ -33,7 +35,6 @@
 	   reserved := binary(),
 	   signature_key := essh_public_key(),
 	   signature := {binary(), binary()} }.
-
 
 -export_type([essh_public_key/0, essh_private_key/0, essh_certificate/0]).
 
@@ -140,6 +141,34 @@ dec_cert_common(<<Serial:64,
       signature => dec_sig(Signature)}.
 
 
+-spec enc_tbs(essh_certificate()) -> binary().
+enc_tbs(#{ type_info := TypeInfo,
+	   nonce := Nonce,
+	   public_key := PublicKey,
+	   serial := Serial,
+	   cert_type := CertType,
+	   key_id := KeyId,
+	   valid_principals := ValidPrincipals,
+	   valid_before := ValidBefore,
+	   valid_after := ValidAfter,
+	   critical_options := CriticalOptions,
+	   extensions := Extensions,
+	   reserved := Reserved,
+	   signature_key := SignatureKey }) ->
+    list_to_binary([ enc_b(TypeInfo),
+		     enc_b(Nonce),
+		     enc_pubkey(PublicKey),
+		     << Serial:64 >>,
+		     enc_cert_type(CertType),
+		     enc_b(KeyId),
+		     enc_b(lists:map(fun enc_b/1, ValidPrincipals)),
+		     <<ValidAfter:64, ValidBefore:64>>,
+		     enc_kvs(CriticalOptions),
+		     enc_kvs(Extensions),
+		     enc_b(Reserved),
+		     enc_b(enc_signature_key(SignatureKey))]).
+
+
 -spec dec_signature_key(binary()) -> essh_public_key().
 dec_signature_key(<<SigKInfoLen:32, SigKInfo:SigKInfoLen/binary,
 		    ELen:32, E:ELen/big-signed-integer-unit:8,
@@ -171,6 +200,24 @@ enc_signature_key(SignatureKey) ->
     list_to_binary([ enc_b(key_type(SignatureKey))
 		   , enc_pubkey(SignatureKey)]).
 
+-spec enc_private_key_cert(essh_private_key()) -> binary().
+enc_private_key_cert(#'ECPrivateKey'{parameters = {namedCurve, ?'id-Ed25519'},
+				     privateKey = Priv, publicKey = Pub}) ->
+    list_to_binary([enc_b(Pub), enc_b([Priv, Pub])]);
+enc_private_key_cert(#'RSAPrivateKey'{privateExponent = D,
+				      coefficient = IQMP,
+				      prime1 = P,
+				      prime2 = Q}) ->
+    list_to_binary(lists:map(fun mpint/1, [D,IQMP,P,Q]));
+
+enc_private_key_cert(#'ECPrivateKey'{parameters = {namedCurve, Oid},
+				     privateKey = Priv})
+  when Oid == ?secp256r1 ;
+       Oid == ?secp384r1 ;
+       Oid == ?secp521r1 ->
+    enc_b(Priv);
+enc_private_key_cert(#'DSAPrivateKey'{x = X}) -> mpint(X).
+
 
 -spec enc_private_key(essh_private_key()) -> binary().
 enc_private_key(#'RSAPrivateKey'{modulus = N,
@@ -182,7 +229,7 @@ enc_private_key(#'RSAPrivateKey'{modulus = N,
     L = [N, E, D, IQMP, P, Q],
     list_to_binary([enc_b("ssh-rsa") | lists:map(fun mpint/1, L)]);
 enc_private_key(#'DSAPrivateKey'{p = P, q = Q, g = G, y = Y, x = X}) ->
-    L = [P, Q, G, Y, X],
+    L = [P, Q, G, X, Y],
     list_to_binary([enc_b("ssh-dss") | lists:map(fun mpint/1, L)]);
 enc_private_key(#'ECPrivateKey'{parameters = {namedCurve, ?'id-Ed25519'},
 				privateKey = Priv, publicKey = Pub}) ->
@@ -215,6 +262,15 @@ curvename2oid(<<"nistp521">>) -> ?secp521r1.
 oid2curvename(?secp256r1) -> <<"nistp256">>;
 oid2curvename(?secp384r1) -> <<"nistp384">>;
 oid2curvename(?secp521r1) -> <<"nistp521">>.
+
+digest_type(<<"ecdsa-sha2-nistp256">>) -> sha256;
+digest_type(<<"ecdsa-sha2-nistp384">>) -> sha384;
+digest_type(<<"ecdsa-sha2-nistp521">>) -> sha512;
+digest_type(<<"ssh-dss">>) -> sha;
+digest_type(<<"ssh-ed25519">>) -> none;
+digest_type(<<"rsa-sha2-512">>) -> sha512;
+digest_type(<<"rsa-sha2-256">>) -> sha256;
+digest_type(<<"ssh-rsa">>) -> sha.
 
 
 key_type(#'RSAPublicKey'{}) -> <<"ssh-rsa">>;
@@ -255,6 +311,7 @@ enc_kvs(L0) ->
 		<<(enc_b(K))/binary, (enc_b(V))/binary>> end, L0)).
 
 
+-spec dec_sig(binary()) -> {binary(), binary()}.
 dec_sig(<<InfoLen:32, Info:InfoLen/binary, SigLen:32, Sig:SigLen/binary>>) ->
     {Info, Sig}.
 

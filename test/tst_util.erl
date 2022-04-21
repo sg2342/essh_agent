@@ -8,7 +8,8 @@
 add_openssh_key(KeyFile, Config) ->
     SockPath = ?config(agent_sock_path, Config),
     PrivDir = ?config(priv_dir, Config),
-    {0, _} = spwn(["ssh-add", "-q", filename:join([PrivDir, ".ssh", KeyFile])],
+    KeyDir = ?config(key_dir, Config),
+    {0, _} = spwn(["ssh-add", "-q", filename:join(KeyDir, KeyFile)],
 		  [{"SSH_AUTH_SOCK", SockPath}, {"HOME", PrivDir}]),
     ok.
 

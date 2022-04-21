@@ -25,6 +25,9 @@
 -type essh_private_key() :: essh_pkt:essh_private_key().
 -type essh_certificate() :: essh_pkt:essh_certificate().
 
+-export_type([essh_agent/0, essh_constraint/0]).
+
+
 -spec request_identities(essh_agent()) ->
 	  {ok, [{essh_public_key() | essh_certificate(), Comment :: binary()}]} |
 	  {error, Reason :: term()}.
@@ -81,12 +84,11 @@ sign_request1({ok, <<?SSH_AGENT_SIGN_RESPONSE,
 		   Comment :: binary()) ->
 	  ok | {error, Reason :: term()}.
 add_identity(Agent, PrivateKey, #{type_info := TypeInfo} = Cert, Comment) ->
-    <<L:32, _:L/binary, KeyBlob/binary>> = essh_pkt:enc_private_key(PrivateKey),
     CertBlob = essh_pkt:enc_cert(Cert),
     Req = <<?SSH_AGENTC_ADD_IDENTITY,
 	    (size(TypeInfo)):32, TypeInfo/binary,
 	    (size(CertBlob)):32, CertBlob/binary,
-	    KeyBlob/binary,
+	    (essh_pkt:enc_private_key_cert(PrivateKey))/binary,
 	    (size(Comment)):32, Comment/binary>>,
     simple_req(Agent, Req).
 
@@ -119,16 +121,16 @@ remove_all_identities(Agent) ->
 	  ok | {error, Reason :: term()}.
 add_id_constrained(Agent, PrivateKey, #{type_info := TypeInfo} = Cert, Comment,
 		   Constraints) ->
-    <<L:32, _:L/binary, KeyBlob/binary>> = essh_pkt:enc_private_key(PrivateKey),
     CertBlob = essh_pkt:enc_cert(Cert),
     Cns = list_to_binary(lists:map(fun enc_constraint/1, Constraints)),
     Req = <<?SSH_AGENTC_ADD_IDENTITY,
 	    (size(TypeInfo)):32, TypeInfo/binary,
 	    (size(CertBlob)):32, CertBlob/binary,
-	    KeyBlob/binary,
+	    (essh_pkt:enc_private_key_cert(PrivateKey))/binary,
 	    (size(Comment)):32, Comment/binary,
 	    Cns/binary>>,
     simple_req(Agent, Req).
+
 
 -spec add_id_constrained(essh_agent(), essh_private_key(),
 			 Comment :: binary(), [essh_constraint()]) ->

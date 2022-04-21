@@ -21,8 +21,9 @@ all() -> [request_identities, sign_request, add_identity, remove_identity,
 
 init_per_suite(Config) ->
     {ok, Started} = application:ensure_all_started(public_key),
-    generate_testkeys(filename:join(?config(priv_dir, Config), ".ssh")),
-    [{started_applications, Started} | Config].
+    KeyDir = filename:join(?config(priv_dir, Config), atom_to_list(?MODULE)),
+    generate_testkeys(KeyDir),
+    [{started_applications, Started}, {key_dir, KeyDir} | Config].
 
 
 end_per_suite(Config0) ->
@@ -93,7 +94,7 @@ add_id_constrained(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
     Comment = <<"comment">>,
     Constraints = [confirm, {lifetime, 1}],
-    C = {namedCurve, ?'id-Ed25519'},
+    C = {namedCurve, ?secp521r1},
     #'ECPrivateKey'{publicKey = PK} = ECkey =
 	public_key:generate_key(C),
     ok = essh_agentc:add_id_constrained(Agent, ECkey, Comment, Constraints),
@@ -141,7 +142,7 @@ add_smartcard_key_constrained(Config) ->
 
 add_certificate(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
-    PrivDir = ?config(priv_dir, Config),
+    KeyDir = ?config(key_dir, Config),
     {ok, []} = essh_agentc:request_identities(Agent),
     tst_util:add_openssh_key("id_ed25519", Config),
     CertOfIds =
@@ -155,7 +156,7 @@ add_certificate(Config) ->
 	end,
     Cert = CertOfIds(),
     ok = essh_agentc:remove_all_identities(Agent),
-    {ok, KeyBin} = file:read_file(filename:join([PrivDir, ".ssh", "id_ed25519"])),
+    {ok, KeyBin} = file:read_file(filename:join(KeyDir, "id_ed25519")),
     [{#'ECPrivateKey'{} = Key, _}, _] = ssh_file:decode(KeyBin, openssh_key_v1),
     ok = essh_agentc:add_identity(Agent, Key, Cert, <<>>),
     Cert = CertOfIds(),
