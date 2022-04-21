@@ -9,11 +9,13 @@
 -export([request_identities/1, sign_request/1, add_identity/1, remove_identity/1,
 	 remove_all_identities/1, add_id_constrained/1, add_smartcard_key/1,
 	 remove_smartcard_key/1, lock/1, add_smartcard_key_constrained/1,
+	 add_certificate/1,
 	 cover1/1, cover2/1]).
 
 all() -> [request_identities, sign_request, add_identity, remove_identity,
 	  remove_all_identities, add_id_constrained, add_smartcard_key,
 	  remove_smartcard_key, lock, add_smartcard_key_constrained,
+	  add_certificate,
 	  cover1, cover2].
 
 
@@ -43,7 +45,7 @@ request_identities(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
     {ok, []} = essh_agentc:request_identities(Agent),
     add_openssh_key("id_ed25519", Config),
-    {ok, [{_, _}]} = essh_agentc:request_identities(Agent).
+    {ok, [{_, _}, {_,_}]} = essh_agentc:request_identities(Agent).
 
 
 sign_request(Config) ->
@@ -136,12 +138,40 @@ add_smartcard_key_constrained(Config) ->
 	essh_agentc:add_smartcard_key_constrained(Agent, <<"Id">>, <<"Pin">>,
 						  Constraints).
 
+
+add_certificate(Config) ->
+    Agent = {local, ?config(agent_sock_path, Config)},
+    PrivDir = ?config(priv_dir, Config),
+    {ok, []} = essh_agentc:request_identities(Agent),
+    add_openssh_key("id_ed25519", Config),
+    CertOfIds =
+	fun() ->
+		{ok, L} = essh_agentc:request_identities(Agent),
+		[Cert] = lists:filtermap(
+			   fun({#{cert_type := _} = C, _}) -> {true, C};
+			      (_) -> false
+			   end, L),
+		Cert
+	end,
+    Cert = CertOfIds(),
+    ok = essh_agentc:remove_all_identities(Agent),
+    {ok, KeyBin} = file:read_file(filename:join([PrivDir, ".ssh", "id_ed25519"])),
+    [{#'ECPrivateKey'{} = Key, _}, _] = ssh_file:decode(KeyBin, openssh_key_v1),
+    ok = essh_agentc:add_identity(Agent, Key, Cert, <<>>),
+    Cert = CertOfIds(),
+    ok = essh_agentc:remove_all_identities(Agent),
+    ok = essh_agentc:add_id_constrained(Agent, Key, Cert, <<>>, [confirm]),
+    Cert = CertOfIds().
+
+
 add_openssh_key(KeyFile, Config) ->
     SockPath = ?config(agent_sock_path, Config),
     PrivDir = ?config(priv_dir, Config),
     {0, _} = spwn(["ssh-add", "-q", filename:join([PrivDir, ".ssh", KeyFile])],
 		  [{"SSH_AUTH_SOCK", SockPath}, {"HOME", PrivDir}]),
     ok.
+
+
 
 
 cover1(_Config) ->

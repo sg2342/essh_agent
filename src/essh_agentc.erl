@@ -3,9 +3,11 @@
 -export([request_identities/1,
 	 sign_request/3,
 	 add_identity/3,
+	 add_identity/4,
 	 remove_identity/2,
 	 remove_all_identities/1,
 	 add_id_constrained/4,
+	 add_id_constrained/5,
 	 add_smartcard_key/3,
 	 remove_smartcard_key/2,
 	 remove_smartcard_key/3,
@@ -19,19 +21,13 @@
 -type essh_constraint() :: confirm | {lifetime, Seconds :: pos_integer()} |
 			   Extension :: {Name :: binary(), Value :: binary()}.
 
--type essh_public_key() :: public_key:rsa_public_key() |
-			   public_key:dsa_public_key() |
-			   public_key:ec_public_key() |
-			   public_key:ed_public_key().
-
--type essh_private_key() :: public_key:rsa_private_key() |
-			    public_key:dsa_private_key() |
-			    public_key:ec_private_key() |
-			    public_key:ed_private_key().
-
+-type essh_public_key() :: essh_pkt:essh_public_key().
+-type essh_private_key() :: essh_pkt:essh_private_key().
+-type essh_certificate() :: essh_pkt:essh_certificate().
 
 -spec request_identities(essh_agent()) ->
-	  {ok, [{essh_public_key(), Comment :: binary()}]} | {error, Reason :: term()}.
+	  {ok, [{essh_public_key() | essh_certificate(), Comment :: binary()}]} |
+	  {error, Reason :: term()}.
 request_identities(Agent) ->
     Req = <<?SSH_AGENTC_REQUEST_IDENTITIES>>,
     request_identities1(req(Agent, Req)).
@@ -51,7 +47,15 @@ request_identities2(_,_,_) -> {error, unexpected_data}.
 
 request_identities3({K, C}) ->
     try {true, {essh_pkt:dec_signature_key(K), C}}
-    catch error:function_clause -> false end.
+    catch error:function_clause ->
+	    request_identities4({K, C})
+    end.
+
+request_identities4({K, C}) ->
+    try {true, {essh_pkt:dec_cert(K), C}}
+    catch error:function_clause ->
+	    false
+    end.
 
 
 -spec sign_request(essh_agent(), TBS :: binary(), essh_public_key()) ->
@@ -72,6 +76,19 @@ sign_request1({ok, <<?SSH_AGENT_SIGN_RESPONSE,
 		     SgnL:32, Signature:SgnL/binary>>}) ->
     {ok, Signature}.
 
+
+-spec add_identity(essh_agent(), essh_private_key(), essh_certificate(),
+		   Comment :: binary()) ->
+	  ok | {error, Reason :: term()}.
+add_identity(Agent, PrivateKey, #{type_info := TypeInfo} = Cert, Comment) ->
+    <<L:32, _:L/binary, KeyBlob/binary>> = essh_pkt:enc_private_key(PrivateKey),
+    CertBlob = essh_pkt:enc_cert(Cert),
+    Req = <<?SSH_AGENTC_ADD_IDENTITY,
+	    (size(TypeInfo)):32, TypeInfo/binary,
+	    (size(CertBlob)):32, CertBlob/binary,
+	    KeyBlob/binary,
+	    (size(Comment)):32, Comment/binary>>,
+    simple_req(Agent, Req).
 
 -spec add_identity(essh_agent(), essh_private_key(), Comment :: binary()) ->
 	  ok | {error, Reason :: term()}.
@@ -96,6 +113,22 @@ remove_identity(Agent, PublicKey) ->
 remove_all_identities(Agent) ->
     simple_req(Agent, <<?SSH_AGENTC_REMOVE_ALL_IDENTITIES>>).
 
+
+-spec add_id_constrained(essh_agent(), essh_private_key(), essh_certificate(),
+			 Comment :: binary(), [essh_constraint()]) ->
+	  ok | {error, Reason :: term()}.
+add_id_constrained(Agent, PrivateKey, #{type_info := TypeInfo} = Cert, Comment,
+		   Constraints) ->
+    <<L:32, _:L/binary, KeyBlob/binary>> = essh_pkt:enc_private_key(PrivateKey),
+    CertBlob = essh_pkt:enc_cert(Cert),
+    Cns = list_to_binary(lists:map(fun enc_constraint/1, Constraints)),
+    Req = <<?SSH_AGENTC_ADD_IDENTITY,
+	    (size(TypeInfo)):32, TypeInfo/binary,
+	    (size(CertBlob)):32, CertBlob/binary,
+	    KeyBlob/binary,
+	    (size(Comment)):32, Comment/binary,
+	    Cns/binary>>,
+    simple_req(Agent, Req).
 
 -spec add_id_constrained(essh_agent(), essh_private_key(),
 			 Comment :: binary(), [essh_constraint()]) ->
