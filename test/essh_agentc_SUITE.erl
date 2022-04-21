@@ -33,25 +33,25 @@ end_per_suite(Config0) ->
 
 init_per_testcase(cover1, Config) -> Config;
 init_per_testcase(_TC, Config) ->
-    start_openssh_agent(Config).
+    tst_util:start_openssh_agent(Config).
 
 
 end_per_testcase(cover1, Config) -> Config;
 end_per_testcase(_TC, Config) ->
-    stop_openssh_agent(Config).
+    tst_util:stop_openssh_agent(Config).
 
 
 request_identities(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
     {ok, []} = essh_agentc:request_identities(Agent),
-    add_openssh_key("id_ed25519", Config),
+    tst_util:add_openssh_key("id_ed25519", Config),
     {ok, [{_, _}, {_,_}]} = essh_agentc:request_identities(Agent).
 
 
 sign_request(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
     TBS = <<"TBS">>,
-    add_openssh_key("ED25519", Config),
+    tst_util:add_openssh_key("ED25519", Config),
     {ok, [{SignatureKey, _}]} = essh_agentc:request_identities(Agent),
     {ok, <<11:32, "ssh-ed25519",L:32,Signature:L/binary>>} =
 	essh_agentc:sign_request(Agent, TBS, SignatureKey),
@@ -73,7 +73,7 @@ remove_identity(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
     lists:foreach(
       fun(K) ->
-	      add_openssh_key(K, Config),
+	      tst_util:add_openssh_key(K, Config),
 	      {ok, [{Key, _Comment}]} = essh_agentc:request_identities(Agent),
 	      ok = essh_agentc:remove_identity(Agent, Key),
 	      {ok, []} = essh_agentc:request_identities(Agent)
@@ -81,8 +81,8 @@ remove_identity(Config) ->
 
 
 remove_all_identities(Config) ->
-    add_openssh_key("ED25519", Config),
-    add_openssh_key("ECDSA", Config),
+    tst_util:add_openssh_key("ED25519", Config),
+    tst_util:add_openssh_key("ECDSA", Config),
     Agent = {local, ?config(agent_sock_path, Config)},
     {ok, [_|_]} = essh_agentc:request_identities(Agent),
     ok = essh_agentc:remove_all_identities(Agent),
@@ -120,7 +120,7 @@ remove_smartcard_key(Config) ->
 lock(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
     Password = <<"password">>,
-    add_openssh_key("DSA", Config),
+    tst_util:add_openssh_key("DSA", Config),
     {error, agent_failure} = essh_agentc:unlock(Agent, Password),
     {ok, [{Key, Comment}]} = essh_agentc:request_identities(Agent),
     ok = essh_agentc:lock(Agent, Password),
@@ -143,7 +143,7 @@ add_certificate(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
     PrivDir = ?config(priv_dir, Config),
     {ok, []} = essh_agentc:request_identities(Agent),
-    add_openssh_key("id_ed25519", Config),
+    tst_util:add_openssh_key("id_ed25519", Config),
     CertOfIds =
 	fun() ->
 		{ok, L} = essh_agentc:request_identities(Agent),
@@ -162,14 +162,6 @@ add_certificate(Config) ->
     ok = essh_agentc:remove_all_identities(Agent),
     ok = essh_agentc:add_id_constrained(Agent, Key, Cert, <<>>, [confirm]),
     Cert = CertOfIds().
-
-
-add_openssh_key(KeyFile, Config) ->
-    SockPath = ?config(agent_sock_path, Config),
-    PrivDir = ?config(priv_dir, Config),
-    {0, _} = spwn(["ssh-add", "-q", filename:join([PrivDir, ".ssh", KeyFile])],
-		  [{"SSH_AUTH_SOCK", SockPath}, {"HOME", PrivDir}]),
-    ok.
 
 
 
@@ -203,27 +195,6 @@ dsa_key(Config) ->
     public_key:pem_entry_decode(hd(public_key:pem_decode(PemBin))).
 
 
-start_openssh_agent(Config) ->
-    {ok, CWD} = file:get_cwd(),
-    L = length(filename:split(CWD)),
-    PD0 =  filename:split(?config(priv_dir, Config)),
-    SshAuthSock = filename:join(lists:nthtail(L, PD0) ++ ["auth.sock"]),
-    Pid = spawn_link(fun() -> spwn(["ssh-agent","-D","-a", SshAuthSock], [])
-		     end),
-    Pid ! {os_pid, self()},
-    OsPid = receive {os_pid, P} -> P end,
-    timer:sleep(300),
-    [{agent_sock_path, SshAuthSock}, {agent_os_pid, OsPid}| Config].
-
-
-stop_openssh_agent(Config) ->
-    OsPid = ?config(agent_os_pid, Config),
-    {0, _} = spwn(["ssh-agent", "-k"],
-		  [{"SSH_AGENT_PID", integer_to_list(OsPid)}]),
-    lists:keydelete(agent_sock_path, 1,
-		    (lists:keydelete(agent_os_pid, 1, Config))).
-
-
 generate_testkeys(Dir) ->
     ok = file:make_dir(Dir),
     L0 = [{undefined, "rsa", "RSA"},
@@ -235,35 +206,16 @@ generate_testkeys(Dir) ->
 	  {undefined, "ed25519", "id_ed25519"}],
     L = [{Bits, Type, filename:join(Dir, Name)} || {Bits, Type, Name} <- L0],
     ok = lists:foreach(fun generate_testkeys1/1,L),
-    {0,_} = spwn(["ssh-keygen", "-q", "-s", filename:join(Dir, "id_ed25519"),
+    {0,_} = tst_util:spwn(["ssh-keygen", "-q", "-s", filename:join(Dir, "id_ed25519"),
 		  "-I", "test.host", "-h", "-n", "test.host","-h",
 		  filename:join(Dir, "id_ed25519.pub")],[]),
     ok.
 
 generate_testkeys1({undefined, Type, OutputKeyfile}) ->
-    {0,_} = spwn(["ssh-keygen", "-N", "", "-C", "some comment", "-t", Type,
+    {0,_} = tst_util:spwn(["ssh-keygen", "-N", "", "-C", "some comment", "-t", Type,
 		  "-f", OutputKeyfile],[]);
 generate_testkeys1({Bits, Type, OutputKeyfile}) ->
-    {0,_} = spwn(["ssh-keygen", "-N", "", "-C", "some comment",
+    {0,_} = tst_util:spwn(["ssh-keygen", "-N", "", "-C", "some comment",
 		  "-b", Bits, "-t", Type, "-f", OutputKeyfile],[]).
 
 
--spec spwn(Args :: [string()], Env ::[{string(), string()}]) ->
-	  {ExitCode :: integer(), string()}.
-spwn([Arg0|Args], Env) ->
-    Opts = [stream, in, eof, hide, exit_status, {arg0, Arg0}, {args, Args}, {env, Env}],
-    spwn1(open_port({spawn_executable, os:find_executable(Arg0)}, Opts), []).
-
-spwn1(Port, Sofar) ->
-    receive
-	{os_pid, From} ->
-	    From ! erlang:port_info(Port, os_pid);
-	{Port, {data, Bytes}} ->
-	    spwn1(Port, [Sofar|Bytes]);
-	{Port, eof} ->
-	    Port ! {self(), close},
-	    receive {Port, closed} -> true end,
-	    receive {'EXIT', Port, _} -> ok after 1 -> ok end,
-	    ExitCode = receive {Port, {exit_status, Code}} -> Code end,
-	    {ExitCode, lists:flatten(Sofar)}
-    end.
