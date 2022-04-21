@@ -37,6 +37,7 @@ end_per_testcase(cover1, Config) -> Config;
 end_per_testcase(_TC, Config) ->
     tst_util:stop_openssh_agent(Config).
 
+
 verify(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
     lists:foreach(
@@ -51,15 +52,8 @@ verify(Config) ->
 key_sign_ed25519(Config) ->
     C = {namedCurve, ?'id-Ed25519'},
     #'ECPrivateKey'{publicKey = PK} = SignatureKey = public_key:generate_key(C),
-    Request = #{public_key => {#'ECPoint'{point = PK}, C},
-		serial => 23,
-		cert_type => user,
-		key_id => <<"foo@bar">>,
-		valid_principals => [<<"root">>],
-		valid_before => 0,
-		valid_after => 18446744073709551615,
-		critical_options => [],
-		extensions => []},
+    Request = (request())#{public_key => {#'ECPoint'{point = PK}, C},
+			   cert_type => user},
     Cert = essh_cert:sign(Request, SignatureKey),
     true = essh_cert:verify(Cert),
     Agent = {local, ?config(agent_sock_path, Config)},
@@ -71,15 +65,8 @@ key_sign_rsa(Config) ->
     E = 65537,
     #'RSAPrivateKey'{modulus = N} = SignatureKey =
 	public_key:generate_key({rsa, 1024, 65537}),
-    Request = #{public_key => #'RSAPublicKey'{modulus = N, publicExponent = E},
-		serial => 23,
-		cert_type => host,
-		key_id => <<"foo@bar">>,
-		valid_principals => [<<"root">>],
-		valid_before => 0,
-		valid_after => 18446744073709551615,
-		critical_options => [],
-		extensions => []},
+    Request = (request())#{public_key => #'RSAPublicKey'{modulus = N, publicExponent = E},
+			   cert_type => host},
     Cert = essh_cert:sign(Request, SignatureKey),
     true = essh_cert:verify(Cert),
     Agent = {local, ?config(agent_sock_path, Config)},
@@ -90,15 +77,8 @@ key_sign_rsa(Config) ->
 key_sign_ecdsa(Config) ->
     C = {namedCurve, ?secp521r1},
     #'ECPrivateKey'{publicKey = PK} = SignatureKey = public_key:generate_key(C),
-    Request = #{public_key => {#'ECPoint'{point = PK}, C},
-		serial => 23,
-		cert_type => user,
-		key_id => <<"foo@bar">>,
-		valid_principals => [<<"root">>],
-		valid_before => 0,
-		valid_after => 18446744073709551615,
-		critical_options => [],
-		extensions => [{<<"force-command">>, <<"/usr/bin/id">>}]},
+    Request = (request())#{public_key => {#'ECPoint'{point = PK}, C},
+			   extensions => [{<<"force-command">>, <<"/usr/bin/id">>}]},
     Cert = essh_cert:sign(Request, SignatureKey),
     true = essh_cert:verify(Cert),
     Agent = {local, ?config(agent_sock_path, Config)},
@@ -109,34 +89,20 @@ key_sign_ecdsa(Config) ->
 key_sign_dsa(Config) ->
     {ok, KeyBin} = file:read_file(filename:join(?config(key_dir, Config), "DSA")),
     [{SignatureKey, _}, {PublicKey, _}] = ssh_file:decode(KeyBin, openssh_key_v1),
-    Request = #{public_key => PublicKey,
-		serial => 23,
-		cert_type => user,
-		key_id => <<"foo@bar">>,
-		valid_principals => [<<"root">>],
-		valid_before => 0,
-		valid_after => 18446744073709551615,
-		critical_options => [],
-		extensions => [{<<"force-command">>, <<"/usr/bin/id">>}]},
+    Request = (request())#{public_key => PublicKey,
+			   extensions => [{<<"force-command">>, <<"/usr/bin/id">>}]},
     Cert = essh_cert:sign(Request, SignatureKey),
     true = essh_cert:verify(Cert),
     Agent = {local, ?config(agent_sock_path, Config)},
     ok = essh_agentc:add_identity(Agent, SignatureKey, Cert, <<"comment">>),
     Cert = cert_of_ids(Agent).
 
+
 agent_sign(Config) ->
     C = {namedCurve, ?'id-Ed25519'},
     #'ECPrivateKey'{publicKey = PK} = SignatureKey = public_key:generate_key(C),
     PublicKey = {#'ECPoint'{point = PK}, C},
-    Request = #{public_key => PublicKey,
-		serial => 23,
-		cert_type => user,
-		key_id => <<"foo@bar">>,
-		valid_principals => [<<"root">>],
-		valid_before => 0,
-		valid_after => 18446744073709551615,
-		critical_options => [],
-		extensions => []},
+    Request = (request())#{public_key => PublicKey},
     Agent = {local, ?config(agent_sock_path, Config)},
     {error, agent_failure} = essh_cert:agent_sign(Request, Agent, PublicKey),
     ok = essh_agentc:add_identity(Agent, SignatureKey, <<"comment">>),
@@ -146,12 +112,22 @@ agent_sign(Config) ->
     Cert = cert_of_ids(Agent).
 
 
+request() ->
+    #{serial => 23,
+      cert_type => user,
+      key_id => <<"foo@bar">>,
+      valid_principals => [<<"root">>],
+      valid_before => 0,
+      valid_after => 18446744073709551615,
+      critical_options => [],
+      extensions => []}.
+
 
 cert_of_ids(Agent) ->
     {ok, L} = essh_agentc:request_identities(Agent),
     [Cert| _] =
 	lists:filtermap(
-	  fun({#{cert_type := _} = C, _}) -> 
+	  fun({#{cert_type := _} = C, _}) ->
 		  {true , C};
 	     (_) -> false end, L),
     Cert.
@@ -170,13 +146,13 @@ generate_testkeys(Dir) ->
     lists:foreach(
       fun({_,_,K}) ->
 	      {0,_} = tst_util:spwn(["ssh-keygen", "-q", "-s", filename:join(Dir, K),
-		  "-I", "test.host", "-h", "-n", "test.host","-h",
-		  filename:join(Dir, K ++ ".pub")],[]) end, L0),
+				     "-I", "test.host", "-h", "-n", "test.host","-h",
+				     filename:join(Dir, K ++ ".pub")],[]) end, L0),
     ok.
 
 generate_testkeys1({undefined, Type, OutputKeyfile}) ->
     {0,_} = tst_util:spwn(["ssh-keygen", "-N", "", "-C", "some comment", "-t", Type,
-		  "-f", OutputKeyfile],[]);
+			   "-f", OutputKeyfile],[]);
 generate_testkeys1({Bits, Type, OutputKeyfile}) ->
     {0,_} = tst_util:spwn(["ssh-keygen", "-N", "", "-C", "some comment",
-		  "-b", Bits, "-t", Type, "-f", OutputKeyfile],[]).
+			   "-b", Bits, "-t", Type, "-f", OutputKeyfile],[]).
