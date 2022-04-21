@@ -6,12 +6,14 @@
 -export([all/0, init_per_suite/1, end_per_suite/1,
 	 init_per_testcase/2, end_per_testcase/2]).
 
--export([verify/1, key_sign_ed25519/1, key_sign_rsa/1, key_sign_ecdsa/1,
-	 key_sign_dsa/1, agent_sign/1]).
+-export([verify/1, verify_file/1,
+	 key_sign_ed25519/1, key_sign_rsa/1, key_sign_ecdsa/1, key_sign_dsa/1,
+	 agent_sign/1]).
 
 
 all() ->
-    [verify, key_sign_ed25519, key_sign_rsa, key_sign_ecdsa, key_sign_dsa,
+    [verify, verify_file,
+     key_sign_ed25519, key_sign_rsa, key_sign_ecdsa, key_sign_dsa,
      agent_sign].
 
 
@@ -47,6 +49,15 @@ verify(Config) ->
 	      true = essh_cert:verify(Cert),
 	      ok = essh_agentc:remove_all_identities(Agent)
       end, ["RSA","DSA","ED25519","ECDSA","ECDSA384","ECDSA521"]).
+
+
+verify_file(Config) ->
+    CertFile = filename:join(?config(data_dir, Config), "rsa-cert.pub"),
+    {ok, Bin} = file:read_file(CertFile),
+    [_, Bin64 | _] = binary:split(Bin, <<" ">>, [global]),
+    CertBlob = base64:decode(Bin64),
+    Cert = essh_pkt:dec_cert(CertBlob),
+    true = essh_cert:verify(Cert).
 
 
 key_sign_ed25519(Config) ->
