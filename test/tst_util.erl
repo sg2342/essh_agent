@@ -1,7 +1,8 @@
 -module(tst_util).
 
 -export([add_openssh_key/2, spwn/2,
-	 start_openssh_agent/1, stop_openssh_agent/1]).
+	 start_openssh_agent/1, stop_openssh_agent/1
+	]).
 
 -include_lib("common_test/include/ct.hrl").
 
@@ -22,6 +23,8 @@ spwn([Arg0|Args], Env) ->
 
 spwn1(Port, Sofar) ->
     receive
+	close ->
+	    Port ! {self(), close};
 	{os_pid, From} ->
 	    From ! erlang:port_info(Port, os_pid);
 	{Port, {data, Bytes}} ->
@@ -35,12 +38,12 @@ spwn1(Port, Sofar) ->
     end.
 
 
-
 start_openssh_agent(Config) ->
-    {ok, CWD} = file:get_cwd(),
-    L = length(filename:split(CWD)),
-    PD0 =  filename:split(?config(priv_dir, Config)),
-    SshAuthSock = filename:join(lists:nthtail(L, PD0) ++ ["auth.sock"]),
+    %%{ok, CWD} = file:get_cwd(),
+    %%L = length(filename:split(CWD)),
+    %%PD0 =  filename:split(?config(priv_dir, Config)),
+    %%filename:join(lists:nthtail(L, PD0) ++ ["auth.sock"]),
+    SshAuthSock = "/tmp/stop_uds_path_too_long_complaints." ++ os:getpid(),
     Pid = spawn_link(fun() -> spwn(["ssh-agent","-D","-a", SshAuthSock], [])
 		     end),
     Pid ! {os_pid, self()},

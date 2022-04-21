@@ -17,7 +17,8 @@
 
 -include("essh_agent_constants.hrl").
 
--type essh_agent() :: {local, SshAuthSock :: file:name_all()}.
+-type essh_agent() :: {local, SshAuthSock :: file:name_all()} |
+		      {remote, SshConnection :: pid()}.
 -type essh_constraint() :: confirm | {lifetime, Seconds :: pos_integer()} |
 			   Extension :: {Name :: binary(), Value :: binary()}.
 
@@ -222,7 +223,10 @@ simple_req1({ok, _}) -> {error, unexpected_data}.
 
 -spec req(essh_agent(), Request :: binary()) ->
 	  {ok, Response :: binary()} | {error, Reason :: term()}.
-req({local, _} = AuthSock, Req) when is_binary(Req) -> local_req(AuthSock, Req).
+req({local, _} = AuthSock, Req) when is_binary(Req) ->
+    local_req(AuthSock, Req);
+req({remote, Connection}, Req) when is_binary(Req), is_pid(Connection) ->
+    remote_req(Connection, Req).
 
 
 local_req(AuthSock, Req) ->
@@ -237,3 +241,38 @@ local_req2(ok, Sock) ->
     Resp = gen_tcp:recv(Sock, 0),
     _ = gen_tcp:close(Sock),
     Resp.
+
+-define(TIMEOUT, 1000).
+remote_req(Connection, Req) ->
+    Self = self(),
+    Pid = spawn( fun() -> Self ! {remote_req, remote_req1(Connection, Req)} end),
+    receive 
+	{remote_req, R} -> R
+    after 2000 ->
+	    exit(Pid,kill),
+	    {error, timeout}
+    end.
+
+
+remote_req1(Connection, Req) ->
+    MaybeChannel =
+	ssh_connection:open_channel(Connection, "auth-agent@openssh.com", <<>>, ?TIMEOUT),
+    remote_req2(MaybeChannel, Connection, Req).
+
+remote_req2({ok, Channel}, Connection, Req) ->
+    MaybeOk = ssh_connection:send(Connection, Channel, 0, <<(size(Req)):32, Req/binary>>),
+    remote_req3(MaybeOk, Channel, Connection);
+remote_req2(E, _, _) -> {error, E}.
+
+
+remote_req3({error, _} = E, Channel, Connection) -> 
+    _ = ssh_connection:close(Connection, Channel), E;
+remote_req3(ok, Channel, Connection)  ->
+    R = receive
+	    {ssh_cm, Connection, {data, Channel, 0, <<DataLen:32, Data:DataLen/binary>>}} ->
+		{ok, Data};
+	    Unexpected -> {error, {unexpected, Unexpected}}
+	after ?TIMEOUT -> {error, timeout}
+	end,
+    _ = ssh_connection:close(Connection, Channel),
+    R.
