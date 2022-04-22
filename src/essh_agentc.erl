@@ -19,7 +19,8 @@
 -include("essh_agent_constants.hrl").
 
 -type essh_agent() :: {local, SshAuthSock :: file:name_all()} |
-		      {remote, SshConnection :: pid()}.
+		      {remote, SshConnection :: pid()} |
+		      {function, function()}.
 -type essh_constraint() :: essh_pkt:essh_constraint().
 -type essh_public_key() :: essh_pkt:essh_public_key().
 -type essh_private_key() :: essh_pkt:essh_private_key().
@@ -212,7 +213,8 @@ simple_req1({ok, _}) -> {error, unexpected_data}.
 req({local, _} = AuthSock, Req) when is_binary(Req) ->
     local_req(AuthSock, Req);
 req({remote, Connection}, Req) when is_binary(Req), is_pid(Connection) ->
-    remote_req(Connection, Req).
+    remote_req(Connection, Req);
+req({function, F}, Req) when is_binary(Req), is_function(F) -> F(Req).
 
 
 local_req(AuthSock, Req) ->

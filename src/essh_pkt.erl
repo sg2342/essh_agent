@@ -11,6 +11,8 @@
 
 -export([enc_tbs/1, key_type/1, oid2curvename/1, mpint/1]).
 
+-export([enc_identities_answer/1, dec_add_id/1, dec_key_or_cert/1]).
+
 -include_lib("public_key/include/public_key.hrl").
 -include("essh_agent_constants.hrl").
 -include("essh_binary.hrl").
@@ -47,6 +49,145 @@
 
 -export_type([essh_public_key/0, essh_private_key/0, essh_certificate/0,
 	      essh_constraint/0]).
+
+-spec enc_identities_answer([{essh_certificate() | essh_public_key(),
+			      Comment ::binary()}]) -> binary().
+enc_identities_answer(L) ->
+    list_to_binary(
+      [<<?UINT32(length(L))>> |
+       lists:map(
+	 fun({#{cert_type := _} = Cert, Comment}) ->
+		 <<?BINARY((enc_cert(Cert))), ?BINARY(Comment)>>;
+	    ({PK, Comment}) ->
+		 <<?BINARY((enc_signature_key(PK))), ?BINARY(Comment)>>
+	 end, L)]).
+
+-spec dec_key_or_cert(binary()) -> essh_public_key() | essh_certificate().
+dec_key_or_cert(<<?BINARY(TypeInfo, _TypeInfoLen), _/binary>> = Bin)
+  when TypeInfo == <<"ssh-ed25519-cert-v01@openssh.com">> ;
+       TypeInfo == <<"ssh-rsa-cert-v01@openssh.com">> ;
+       TypeInfo == <<"rsa-sha2-256-cert-v01@openssh.com">> ;
+       TypeInfo == <<"rsa-sha2-512-cert-v01@openssh.com">> ;
+       TypeInfo == <<"ssh-dss-cert-v01@openssh.com">> ;
+       TypeInfo == <<"ecdsa-sha2-nistp256-cert-v01@openssh.com">>;
+       TypeInfo == <<"ecdsa-sha2-nistp384-cert-v01@openssh.com">>;
+       TypeInfo == <<"ecdsa-sha2-nistp521-cert-v01@openssh.com">> ->
+    dec_cert(Bin);
+dec_key_or_cert(Bin) -> dec_signature_key(Bin).
+
+
+-spec dec_add_id(binary()) ->
+	  {essh_private_key(), Comment :: binary(),
+	   [essh_constraint()]} |
+	  {essh_private_key(), essh_certificate(), Comment :: binary(),
+	   [essh_constraint()]}.
+dec_add_id(<<?BINARY(TypeInfo, _TypeInfoLen),
+	     ?BINARY(CertBlob, _CertBlobLen),
+	     Rest/binary>>)
+  when TypeInfo == <<"ssh-ed25519-cert-v01@openssh.com">> ;
+       TypeInfo == <<"ssh-rsa-cert-v01@openssh.com">> ;
+       TypeInfo == <<"rsa-sha2-256-cert-v01@openssh.com">> ;
+       TypeInfo == <<"rsa-sha2-512-cert-v01@openssh.com">> ;
+       TypeInfo == <<"ssh-dss-cert-v01@openssh.com">> ;
+       TypeInfo == <<"ecdsa-sha2-nistp256-cert-v01@openssh.com">>;
+       TypeInfo == <<"ecdsa-sha2-nistp384-cert-v01@openssh.com">>;
+       TypeInfo == <<"ecdsa-sha2-nistp521-cert-v01@openssh.com">> ->
+    dec_add_id_c(dec_cert(CertBlob), TypeInfo,Rest);
+dec_add_id(<<?BINARY(TypeInfo, _TypeInfoLen),
+	     ?MPINT(N, _NLen), ?MPINT(E, _ELen), ?MPINT(D, _DLen),
+	     ?MPINT(IQMP, _IQMPLen), ?MPINT(P, _PLen), ?MPINT(Q, _QLen),
+	     ?BINARY(Comment, _CommentLen), Constraints/binary>>)
+  when TypeInfo == <<"ssh-rsa">> ->
+    Key = #'RSAPrivateKey'{modulus = N,
+			   publicExponent = E,
+			   privateExponent = D,
+			   coefficient = IQMP,
+			   prime1 = P,
+			   prime2 = Q},
+    {Key, Comment, dec_constraints(Constraints)};
+dec_add_id(<<?BINARY(TypeInfo, _TypeInfoLen),
+	     ?MPINT(P, _PLen), ?MPINT(Q, _QLen), ?MPINT(G, _GLen),
+	     ?MPINT(X, _XLen), ?MPINT(Y, YLen),
+	     ?BINARY(Comment, _CommentLen), Constraints/binary>>)
+  when TypeInfo == <<"ssh-dss">> ->
+    Key = #'DSAPrivateKey'{p = P, q = Q, g = G, y = Y, x = X},
+    {Key, Comment, dec_constraints(Constraints)};
+dec_add_id(<<?BINARY(TypeInfo, _TypeInfoLen),
+	     ?BINARY(PK, PKLen), ?BINARY(PrivPub, PrivPubLen),
+	     ?BINARY(Comment, _CommentLen), Constraints/binary>>)
+  when TypeInfo == <<"ssh-ed25519">> ->
+    <<Priv:(PrivPubLen - PKLen)/binary, PK:PKLen/binary>> = PrivPub,
+    Key = #'ECPrivateKey'{parameters = {namedCurve, ?'id-Ed25519'},
+			  privateKey = Priv, publicKey = PK},
+    {Key, Comment, dec_constraints(Constraints)};
+dec_add_id(<<?BINARY(TypeInfo, _TypeInfoLen),
+	     ?BINARY(C, _CLen), ?BINARY(Pub, _PubLen), ?BINARY(Priv, _PrivLen),
+	     ?BINARY(Comment, _CommentLen), Constraints/binary>>)
+  when (TypeInfo == <<"ecdsa-sha2-nistp256">>) andalso (C == <<"nistp256">>);
+       (TypeInfo == <<"ecdsa-sha2-nistp384">>) andalso (C == <<"nistp384">>);
+       (TypeInfo == <<"ecdsa-sha2-nistp521">>) andalso (C == <<"nistp521">>) ->
+    Key = #'ECPrivateKey'{parameters = {namedCurve, curvename2oid(C)},
+			  privateKey = Priv, publicKey = Pub},
+    {Key, Comment, dec_constraints(Constraints)}.
+
+
+dec_add_id_c(#{type_info := TypeInfo,
+	       public_key := {#'ECPoint'{point = PK},
+			      {namedCurve, ?'id-Ed25519'} = Curve}} = Cert,
+	     TypeInfo,
+	     <<?BINARY(PK, PKLen), ?BINARY(PrivPub, PrivPubLen),
+	       ?BINARY(Comment, _CommentLen), Constraints/binary>>) ->
+    <<Priv:(PrivPubLen - PKLen)/binary, PK:PKLen/binary>> = PrivPub,
+    Key = #'ECPrivateKey'{parameters = Curve, privateKey = Priv, publicKey = PK},
+    {Key, Cert, Comment, dec_constraints(Constraints)};
+dec_add_id_c(#{type_info := TypeInfo,
+	       public_key := {#'ECPoint'{point = PK},
+			      {namedCurve, Oid} = Curve}} = Cert,
+	     TypeInfo,
+	     <<?BINARY(Priv, _PrivLen),
+	       ?BINARY(Comment, _CommentLen), Constraints/binary>>) when
+      Oid == ?secp256r1 ; Oid == ?secp384r1 ; Oid == ?secp521r1 ->
+    Key = #'ECPrivateKey'{parameters = Curve, privateKey = Priv, publicKey = PK},
+    {Key, Cert, Comment, dec_constraints(Constraints)};
+dec_add_id_c(#{type_info := TypeInfo,
+	       public_key := {Y, #'Dss-Parms'{p = P, q = Q, g = G}}} = Cert,
+	     TypeInfo,
+	     <<?MPINT(X, _XLen),
+	       ?BINARY(Comment, _CommentLen), Constraints/binary>>) ->
+    Key = #'DSAPrivateKey'{p = P, q = Q, g = G, y = Y, x = X},
+    {Key, Cert, Comment, dec_constraints(Constraints)};
+dec_add_id_c(#{type_info := TypeInfo,
+	       public_key := #'RSAPublicKey'{modulus = N
+					    ,publicExponent = E}} = Cert,
+	     TypeInfo,
+	     <<?MPINT(D, _DLen), ?MPINT(IQMP, _IQMPLen),
+	       ?MPINT(P, _PLen), ?MPINT(Q, _QLen),
+	       ?BINARY(Comment, _CommentLen), Constraints/binary>>) ->
+    Key = #'RSAPrivateKey'{version = 'two-prime',
+			   modulus = N,
+			   publicExponent = E,
+			   privateExponent = D,
+			   coefficient = IQMP,
+			   prime1 = P,
+			   prime2 = Q},
+    {Key, Cert, Comment, dec_constraints(Constraints)}.
+
+
+-spec dec_constraints(binary()) -> [essh_constraint()].
+dec_constraints(CS) -> dec_constraints1(CS, []).
+
+dec_constraints1(<<>>, Acc) ->
+    Acc;
+dec_constraints1(<<?BYTE(?SSH_AGENT_CONSTRAIN_CONFIRM), Rest/binary>>, Acc) ->
+    dec_constraints1(Rest, [confirm|Acc]);
+dec_constraints1(<<?BYTE(?SSH_AGENT_CONSTRAIN_LIFETIME),
+		   ?UINT32(Seconds), Rest/binary>>, Acc) ->
+    dec_constraints1(Rest, [{lifetime, Seconds}|Acc]);
+dec_constraints1(<<?BYTE(?SSH_AGENT_CONSTRAIN_EXTENSION),
+		   ?BINARY(Name, _NameLen), ?BINARY(Value, ValueLen),
+		   Rest/binary>>, Acc) ->
+    dec_constraints1(Rest, [{Name, Value}|Acc]).
+
 
 -spec enc_constraints([essh_constraint()]) -> binary().
 enc_constraints(L) -> list_to_binary([enc_constraint(V) || V <- L]).

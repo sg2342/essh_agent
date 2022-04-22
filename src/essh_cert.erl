@@ -1,6 +1,7 @@
 -module(essh_cert).
 
 -export([key_sign/2, agent_sign/3, verify/1]).
+-export([pubkey/1, signinfo/1, key_sign1/3, digest_type/1]).
 
 -include_lib("public_key/include/public_key.hrl").
 
@@ -64,6 +65,8 @@ key_sign(#{public_key := PublicKey} = Request, Key) ->
     Cert#{signature => {SignInfo, Signature}}.
 
 
+-spec key_sign1(binary(), none | sha | sha256 | sha384 | sha512 ,
+		essh_public_key()) -> binary().
 key_sign1(TBS, DigestType, #'DSAPrivateKey'{} = Key) ->
     DER = public_key:sign(TBS, DigestType, Key),
     #'Dss-Sig-Value'{r = R, s = S} = public_key:der_decode('Dss-Sig-Value', DER),
@@ -93,6 +96,7 @@ agent_sign1({ok, <<?BINARY(I, _ILen), ?BINARY(S, _SLen)>>}, Cert) ->
 agent_sign1({error, _} = E, _) -> E.
 
 
+-spec pubkey(essh_private_key()) -> essh_public_key().
 pubkey(#'RSAPrivateKey'{ publicExponent = E, modulus = N }) ->
     #'RSAPublicKey'{  publicExponent = E, modulus = N };
 pubkey(#'DSAPrivateKey'{p = P, q = Q, g = G, y = Y}) ->
@@ -100,6 +104,7 @@ pubkey(#'DSAPrivateKey'{p = P, q = Q, g = G, y = Y}) ->
 pubkey(#'ECPrivateKey'{parameters = C, publicKey = Q}) ->
     {#'ECPoint'{point=Q}, C}.
 
+-spec signinfo(essh_public_key()) -> binary().
 signinfo(#'RSAPublicKey'{}) -> <<"rsa-sha2-256">>;
 signinfo({_,#'Dss-Parms'{}}) -> <<"ssh-dss">>;
 signinfo({#'ECPoint'{}, {namedCurve, ?'id-Ed25519'}}) -> <<"ssh-ed25519">>;
@@ -107,6 +112,7 @@ signinfo({#'ECPoint'{}, {namedCurve, Oid}}) ->
     <<"ecdsa-sha2-", (essh_pkt:oid2curvename(Oid))/binary>>.
 
 
+-spec digest_type(binary()) -> none | sha | sha256 | sha384 | sha512.
 digest_type(<<"ecdsa-sha2-nistp256">>) -> sha256;
 digest_type(<<"ecdsa-sha2-nistp384">>) -> sha384;
 digest_type(<<"ecdsa-sha2-nistp521">>) -> sha512;
