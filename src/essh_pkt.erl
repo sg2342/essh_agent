@@ -5,8 +5,9 @@
 	 enc_private_key_cert/1,
 	 enc_private_key/1]).
 
--export([enc_cert/1, dec_cert/1, digest_type/1, enc_tbs/1, key_type/1,
-	 oid2curvename/1, mpint/1]).
+-export([enc_cert/1, dec_cert/1]).
+
+-export([enc_tbs/1, key_type/1, oid2curvename/1, mpint/1]).
 
 -include_lib("public_key/include/public_key.hrl").
 -include("essh_binary.hrl").
@@ -217,15 +218,6 @@ curvename2oid(<<"nistp521">>) -> ?secp521r1.
 oid2curvename(?secp256r1) -> <<"nistp256">>;
 oid2curvename(?secp384r1) -> <<"nistp384">>;
 oid2curvename(?secp521r1) -> <<"nistp521">>.
-
-digest_type(<<"ecdsa-sha2-nistp256">>) -> sha256;
-digest_type(<<"ecdsa-sha2-nistp384">>) -> sha384;
-digest_type(<<"ecdsa-sha2-nistp521">>) -> sha512;
-digest_type(<<"ssh-dss">>) -> sha;
-digest_type(<<"ssh-ed25519">>) -> none;
-digest_type(<<"rsa-sha2-512">>) -> sha512;
-digest_type(<<"rsa-sha2-256">>) -> sha256;
-digest_type(<<"ssh-rsa">>) -> sha.
 
 
 key_type(#'RSAPublicKey'{}) -> <<"ssh-rsa">>;
