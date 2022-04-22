@@ -4,6 +4,7 @@
 
 -include_lib("public_key/include/public_key.hrl").
 
+-include("essh_binary.hrl").
 
 -type essh_certificate() :: essh_pkt:essh_certificate().
 -type essh_private_key() :: essh_pkt:essh_private_key().
@@ -20,7 +21,7 @@
 	   valid_before := 0..18446744073709551615,
 	   valid_after := 0..18446744073709551615,
 	   critical_options := [{binary(), binary()}],
-	   extensions := [{binary(), binary()}]}.
+	   extensions := [{binary(), binary()}] }.
 
 
 -spec verify(essh_certificate()) -> boolean().
@@ -30,8 +31,7 @@ verify(#{signature_key := Key, signature := {SigInfo, Sig}} = Cert) ->
     verify1(TBS, DigestType, Sig, Key).
 
 verify1(TBS, DigestType,
-	<<RLen:32, R:RLen/big-signed-integer-unit:8,
-	  SLen:32, S:SLen/big-signed-integer-unit:8>>,
+	<<?MPINT(R, _RLen), ?MPINT(S, _SLen)>>,
 	{#'ECPoint'{},_} = Key) ->
     DER = public_key:der_encode('ECDSA-Sig-Value',
 				#'ECDSA-Sig-Value'{r=R, s=S}),
@@ -85,7 +85,8 @@ agent_sign(#{public_key := PublicKey} = Request, Agent, SignatureKey) ->
 		    signature_key => SignatureKey },
     TBS = essh_pkt:enc_tbs(Cert),
     case essh_agentc:sign_request(Agent, TBS, SignatureKey) of
-	{ok, Signature} -> {ok, Cert#{signature => essh_pkt:dec_sig(Signature)}};
+	{ok, <<?BINARY(Info, _InfoLen), ?BINARY(Signature, _SignatureLen)>>} ->
+	    {ok, Cert#{signature => {Info, Signature}}};
 	{error, _} = E -> E
     end.
 
