@@ -8,9 +8,9 @@
 	 init_per_testcase/2, end_per_testcase/2]).
 
 -export([host_key/2, is_auth_key/3]).
--export([request_ids/1, timeout1/1, no_agent/1]).
+-export([request_ids/1, timeout1/1, no_agent/1, cover/1]).
 
-all() -> [request_ids, timeout1, no_agent].
+all() -> [request_ids, timeout1, no_agent, cover].
 
 
 init_per_suite(Config) ->
@@ -106,6 +106,70 @@ start_ssh_daemon(Port, Parent) ->
 	    _ = ssh:stop_listener(Daemon),
 	    ssh:stop_daemon(Daemon)
     end.
+
+
+cover(_Config) ->
+    F1 = fun() ->
+		 receive {'$gen_call', From1, _} ->
+			 gen_server:reply(From1, {ok, 23}) end,
+		 receive {'$gen_call', From2, _} ->
+			 gen_server:reply(From2, {error, foo}) end,
+		 receive {'$gen_call', From3, _} ->
+			 gen_server:reply(From3, ok) end
+	 end,
+    {error, foo} = essh_agentc:remove_all_identities({remote, spawn(F1)}),
+    F2 =fun() ->
+		receive {'$gen_call', From1, _} ->
+			gen_server:reply(From1, {ok, 23}) end,
+		receive {'$gen_call', From2, _} ->
+			gen_server:reply(From2, ok) end
+	end,
+    {error, timeout} = essh_agentc:remove_all_identities({remote, spawn(F2)}),
+    F3 =fun() ->
+		receive {'$gen_call', {Pid, _Ref} = From1, _} ->
+			gen_server:reply(From1, {ok, 23}) end,
+		receive {'$gen_call', From2, _} ->
+			gen_server:reply(From2, ok) end,
+		Pid ! {ssh_cm, <<"NONSENSE">>},
+		receive {'$gen_call', From4, _} ->
+			gen_server:reply(From4, ok) end
+	end,
+    {error, {unexpected, {ssh_cm, <<"NONSENSE">>}}} =
+	essh_agentc:remove_all_identities({remote, spawn(F3)}),
+    F4 =fun() ->
+		receive {'$gen_call', {Pid, _Ref} = From1, _} ->
+			gen_server:reply(From1, {ok, 23}) end,
+		receive {'$gen_call', From2, _} ->
+			gen_server:reply(From2, ok) end,
+		Pid ! {ssh_cm, self(), {data, 23, 0, <<0:32>>}},
+		receive {'$gen_call', From4, _} ->
+			gen_server:reply(From4, ok) end
+	end,
+    {error, unexpected_data} =
+	essh_agentc:remove_all_identities({remote, spawn(F4)}),
+    F5 =fun() ->
+		receive {'$gen_call', {Pid, _Ref} = From1, _} ->
+			gen_server:reply(From1, {ok, 23}) end,
+		receive {'$gen_call', From2, _} ->
+			gen_server:reply(From2, ok) end,
+		Pid ! {ssh_cm, self(), {data, 23, 0, <<5:32, 12, 1:32>>}},
+		receive {'$gen_call', From4, _} ->
+			gen_server:reply(From4, ok) end
+	end,
+    {error, unexpected_data} =
+	essh_agentc:request_identities({remote, spawn(F5)}),
+    F6 =fun() ->
+		receive {'$gen_call', {Pid, _Ref} = From1, _} ->
+			gen_server:reply(From1, {ok, 23}) end,
+		receive {'$gen_call', From2, _} ->
+			gen_server:reply(From2, ok) end,
+		Pid ! {ssh_cm, self(), {data, 23, 0, <<13:32, 12, 1:32,0:32,0:32>>}},
+		receive {'$gen_call', From4, _} ->
+			gen_server:reply(From4, ok) end
+	end,
+    {ok, []} =
+	essh_agentc:request_identities({remote, spawn(F6)}).
+
 
 
 host_key(_, [{key_cb_private, [Key]}|_]) -> {ok, Key};
