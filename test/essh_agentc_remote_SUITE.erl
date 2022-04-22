@@ -147,6 +147,12 @@ cover(_Config) ->
 	end,
     {error, unexpected_data} =
 	essh_agentc:remove_all_identities({remote, spawn(F4)}),
+    {error, unexpected_data} =
+	essh_agentc:request_identities({remote, spawn(F4)}),
+    {error, unexpected_data} =
+	essh_agentc:sign_request({remote, spawn(F4)}, <<>>,
+				 {#'ECPoint'{point = <<>>},
+				  {namedCurve, ?secp256r1}}),
     F5 =fun() ->
 		receive {'$gen_call', {Pid, _Ref} = From1, _} ->
 			gen_server:reply(From1, {ok, 23}) end,

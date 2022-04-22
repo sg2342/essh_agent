@@ -38,7 +38,8 @@ request_identities(Agent) ->
 request_identities1({error, _} = E) -> E;
 request_identities1({ok, <<?BYTE(?SSH_AGENT_IDENTITIES_ANSWER),
 			   ?UINT32(Count), Data/binary >>}) ->
-    request_identities2(Count, Data, []).
+    request_identities2(Count, Data, []);
+request_identities1({ok, _}) -> {error, unexpected_data}.
 
 request_identities2(0, <<>>, Acc) ->
     {ok, lists:filtermap(fun request_identities3/1, Acc)};
@@ -70,12 +71,11 @@ sign_request(Agent, TBS, SignatureKey) ->
 	    ?BINARY(KeyBlob), ?BINARY(TBS), ?UINT32(Flags)>>,
     sign_request1(req(Agent, Req)).
 
-sign_request1({error, _} = E) ->
-    E;
+sign_request1({error, _} = E) -> E;
 sign_request1({ok, <<?BYTE(?SSH_AGENT_FAILURE)>>}) -> {error, agent_failure};
 sign_request1({ok, <<?BYTE(?SSH_AGENT_SIGN_RESPONSE),
-		     ?BINARY(Signature, SingatureLen)>>}) ->
-    {ok, Signature}.
+		     ?BINARY(Signature, SingatureLen)>>}) -> {ok, Signature};
+sign_request1({ok, _}) -> {error, unexpected_data}.
 
 
 -spec add_identity(essh_agent(), essh_private_key(), essh_certificate(),
