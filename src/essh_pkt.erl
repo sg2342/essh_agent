@@ -7,9 +7,12 @@
 
 -export([enc_cert/1, dec_cert/1]).
 
+-export([enc_constraints/1]).
+
 -export([enc_tbs/1, key_type/1, oid2curvename/1, mpint/1]).
 
 -include_lib("public_key/include/public_key.hrl").
+-include("essh_agent_constants.hrl").
 -include("essh_binary.hrl").
 
 -type essh_public_key() :: public_key:rsa_public_key() |
@@ -38,7 +41,21 @@
 	   signature_key := essh_public_key(),
 	   signature := {binary(), binary()} }.
 
--export_type([essh_public_key/0, essh_private_key/0, essh_certificate/0]).
+-type essh_constraint() :: confirm |
+			   {lifetime, Seconds :: pos_integer()} |
+			   Extension :: {Name :: binary(), Value :: binary()}.
+
+-export_type([essh_public_key/0, essh_private_key/0, essh_certificate/0,
+	      essh_constraint/0]).
+
+-spec enc_constraints([essh_constraint()]) -> binary().
+enc_constraints(L) -> list_to_binary([enc_constraint(V) || V <- L]).
+
+enc_constraint(confirm) -> <<?BYTE(?SSH_AGENT_CONSTRAIN_CONFIRM)>>;
+enc_constraint({lifetime, Seconds}) when is_integer(Seconds), Seconds > 0 ->
+    <<?BYTE(?SSH_AGENT_CONSTRAIN_LIFETIME), ?UINT32(Seconds)>>;
+enc_constraint({Name, Value}) when is_binary(Name), is_binary(Value) ->
+    <<?BYTE(?SSH_AGENT_CONSTRAIN_EXTENSION), ?BINARY(Name), ?BINARY(Value) >>.
 
 
 -spec enc_cert(essh_certificate()) -> binary().
@@ -124,10 +141,14 @@ enc_tbs(#{ type_info := TypeInfo,
 	   extensions := Extensions,
 	   reserved := Reserved,
 	   signature_key := SignatureKey }) ->
-    <<?BINARY(TypeInfo), ?BINARY(Nonce), (enc_pubkey(PublicKey))/binary,
-      ?UINT64(Serial), (enc_cert_type(CertType))/binary, ?BINARY(KeyId),
+    <<?BINARY(TypeInfo),
+      ?BINARY(Nonce),
+      (enc_pubkey(PublicKey))/binary,
+      ?UINT64(Serial),
+      (enc_cert_type(CertType))/binary, ?BINARY(KeyId),
       ?BINARY((enc_sl(ValidPrincipals))),
-      ?UINT64(ValidAfter), ?UINT64(ValidBefore),
+      ?UINT64(ValidAfter),
+      ?UINT64(ValidBefore),
       ?BINARY((enc_kvs(CriticalOptions))),
       ?BINARY((enc_kvs(Extensions))),
       ?BINARY(Reserved),
@@ -215,11 +236,13 @@ curvename2oid(<<"nistp384">>) -> ?secp384r1;
 curvename2oid(<<"nistp521">>) -> ?secp521r1.
 
 
+-spec oid2curvename(?secp256r1 | ?secp384r1 | ?secp521r1) -> binary().
 oid2curvename(?secp256r1) -> <<"nistp256">>;
 oid2curvename(?secp384r1) -> <<"nistp384">>;
 oid2curvename(?secp521r1) -> <<"nistp521">>.
 
 
+-spec key_type(essh_public_key()) -> binary().
 key_type(#'RSAPublicKey'{}) -> <<"ssh-rsa">>;
 key_type({_, #'Dss-Parms'{}}) -> <<"ssh-dss">>;
 key_type({#'ECPoint'{}, {namedCurve, ?'id-Ed25519'}}) -> <<"ssh-ed25519">>;
@@ -238,8 +261,7 @@ dec_cert_type(2) -> host.
 enc_sl(L) -> list_to_binary([<<?BINARY(V)>> || V <- L]).
 
 dec_sl(<<>>, Acc) -> lists:reverse(Acc);
-dec_sl(<<?BINARY(String, _StringLen), Rest/binary>>, Acc) ->
-    dec_sl(Rest, [String|Acc]).
+dec_sl(<<?BINARY(S, _SLen), Rest/binary>>, Acc) -> dec_sl(Rest, [S|Acc]).
 
 
 enc_kvs(KvS) -> list_to_binary([<<?BINARY(K), ?BINARY(V)>> || {K,V} <- KvS]).
@@ -255,6 +277,7 @@ dec_kvs(<<?BINARY(K, _KLen), ?BINARY(V, _VLen), Rest/binary>>, Acc) ->
 %%% which is Copyright Ericsson AB 2005-2016. All Rights Reserved.
 %%% and Licensed under the Apache License, Version 2.0
 
+-spec mpint(integer()) -> <<_:32, _:_*8>>.
 mpint(-1) -> <<0,0,0,1,16#ff>>;
 mpint(0) -> <<0,0,0,0>>;
 mpint(I) when I>0 ->

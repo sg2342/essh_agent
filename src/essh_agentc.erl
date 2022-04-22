@@ -20,9 +20,7 @@
 
 -type essh_agent() :: {local, SshAuthSock :: file:name_all()} |
 		      {remote, SshConnection :: pid()}.
--type essh_constraint() :: confirm | {lifetime, Seconds :: pos_integer()} |
-			   Extension :: {Name :: binary(), Value :: binary()}.
-
+-type essh_constraint() :: essh_pkt:essh_constraint().
 -type essh_public_key() :: essh_pkt:essh_public_key().
 -type essh_private_key() :: essh_pkt:essh_private_key().
 -type essh_certificate() :: essh_pkt:essh_certificate().
@@ -108,8 +106,7 @@ remove_identity(Agent, PublicKey) ->
     simple_req(Agent, Req).
 
 
--spec remove_all_identities(essh_agent()) ->
-	  ok | {error, Reason :: term()}.
+-spec remove_all_identities(essh_agent()) -> ok | {error, Reason :: term()}.
 remove_all_identities(Agent) ->
     simple_req(Agent, <<?BYTE(?SSH_AGENTC_REMOVE_ALL_IDENTITIES)>>).
 
@@ -120,11 +117,11 @@ remove_all_identities(Agent) ->
 add_id_constrained(Agent, PrivateKey, #{type_info := TypeInfo} = Cert, Comment,
 		   Constraints) ->
     CertBlob = essh_pkt:enc_cert(Cert),
-    Cns = list_to_binary(lists:map(fun enc_constraint/1, Constraints)),
     Req = <<?BYTE(?SSH_AGENTC_ADD_IDENTITY),
 	    ?BINARY(TypeInfo), ?BINARY(CertBlob),
 	    (essh_pkt:enc_private_key_cert(PrivateKey))/binary,
-	    ?BINARY(Comment), Cns/binary>>,
+	    ?BINARY(Comment),
+	    (essh_pkt:enc_constraints(Constraints))/binary>>,
     simple_req(Agent, Req).
 
 
@@ -132,10 +129,10 @@ add_id_constrained(Agent, PrivateKey, #{type_info := TypeInfo} = Cert, Comment,
 			 Comment :: binary(), [essh_constraint()]) ->
 	  ok | {error, Reason :: term()}.
 add_id_constrained(Agent, PrivateKey, Comment, Constraints) ->
-    Cns = list_to_binary(lists:map(fun enc_constraint/1, Constraints)),
     Req = <<?BYTE(?SSH_AGENTC_ADD_IDENTITY),
 	    (essh_pkt:enc_private_key(PrivateKey))/binary,
-	    ?BINARY(Comment), Cns/binary>>,
+	    ?BINARY(Comment),
+	    (essh_pkt:enc_constraints(Constraints))/binary>>,
     simple_req(Agent, Req).
 
 
@@ -182,20 +179,11 @@ unlock(Agent, Password) when is_binary(Password) ->
 	  ok | {error, Reason :: term()}.
 add_smartcard_key_constrained(Agent, Id, Pin, Constraints)
   when is_binary(Id), is_binary(Pin) ->
-    Cns = list_to_binary(lists:map(fun enc_constraint/1, Constraints)),
     Req = <<?BYTE(?SSH_AGENTC_ADD_SMARTCARD_KEY_CONSTRAINED),
-	    ?BINARY(Id), ?BINARY(Pin), Cns/binary >>,
+	    ?BINARY(Id), ?BINARY(Pin),
+	    (essh_pkt:enc_constraints(Constraints))/binary>>,
     simple_req(Agent, Req).
 
-
--spec enc_constraint(essh_constraint()) -> binary().
-enc_constraint(confirm) ->
-    <<?BYTE(?SSH_AGENT_CONSTRAIN_CONFIRM)>>;
-enc_constraint({lifetime, Seconds}) when is_integer(Seconds), Seconds > 0 ->
-    <<?BYTE(?SSH_AGENT_CONSTRAIN_LIFETIME), ?UINT32(Seconds)>>;
-enc_constraint({Name, Value}) when is_binary(Name), is_binary(Value) ->
-    <<?BYTE(?SSH_AGENT_CONSTRAIN_EXTENSION),
-      ?BINARY(Name), ?BINARY(Value) >>.
 
 
 -spec simple_req(essh_agent(), Request :: binary()) ->
