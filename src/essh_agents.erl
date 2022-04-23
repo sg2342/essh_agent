@@ -74,13 +74,17 @@ req2(_) -> <<?BYTE(?SSH_AGENT_FAILURE)>>.
 
 handle_event({call, From}, list, locked, _) ->
     {keep_state_and_data, [{reply, From, {ok, []}}]};
-handle_event({call, From}, list, unlocked, L) ->
+handle_event({call, From}, list, unlocked, L0) ->
+    L = filter_lifetime(L0),
     LL = [{Id, C} || #t{pubOrCert = Id, comment = C} <- L],
-    {keep_state_and_data, [{reply, From, {ok, LL}}]};
-handle_event({call, From}, {add, Id}, unlocked, L0) ->
-    L = lists:keystore(Id#t.pubOrCert, #t.pubOrCert, L0, Id),
+    {keep_state, L, [{reply, From, {ok, LL}}]};
+handle_event({call, From}, {add, #t{constraints = Constraints0} = Id}, unlocked, L0) ->
+    Constraints = patch_lifetime(Constraints0),
+    L = lists:keystore(Id#t.pubOrCert, #t.pubOrCert, L0,
+		       Id#t{constraints = Constraints}),
     {keep_state, L, [{reply, From, ok}]};
-handle_event({call, From}, {sign_request, PubOrCert, TBS}, unlocked, L) ->
+handle_event({call, From}, {sign_request, PubOrCert, TBS}, unlocked, L0) ->
+    L = filter_lifetime(L0),
     R = case lists:keyfind(PubOrCert, #t.pubOrCert, L) of
 	    false -> {error, no_matching_key};
 	    #t{pubOrCert = #{public_key := Pub}, priv = Priv} ->
@@ -92,13 +96,12 @@ handle_event({call, From}, {sign_request, PubOrCert, TBS}, unlocked, L) ->
 		DigestType = essh_cert:digest_type(SignInfo),
 		{ok, {SignInfo, essh_cert:key_sign1(TBS, DigestType, Priv)}}
 	end,
-    {keep_state_and_data, [{reply, From, R}]};
+    {keep_state, L, [{reply, From, R}]};
 handle_event({call, From}, {remove, PubOrCert}, unlocked, L0) ->
-    case lists:keytake(PubOrCert, #t.pubOrCert, L0) of
-	false ->
-	    {keep_state_and_data, [{reply, From, {error, no_matching_key}}]};
-	{value, _, L} ->
-	    {keep_state, L, [{reply, From, ok}]}
+    L1 = filter_lifetime(L0),
+    case lists:keytake(PubOrCert, #t.pubOrCert, L1) of
+	false -> {keep_state, L1, [{reply, From, {error, no_matching_key}}]};
+	{value, _, L} -> {keep_state, L, [{reply, From, ok}]}
     end;
 handle_event({call, From}, remove_all, unlocked, _) ->
     {keep_state, [], [{reply, From, ok}]};
@@ -108,3 +111,26 @@ handle_event({call, From}, {unlock, Password}, locked, {Password, L}) ->
     {next_state, unlocked, L, [{reply, From, ok}]};
 handle_event({call, From}, _,_,_) ->
     {keep_state_and_data, [{reply, From, {error, agent_failure}}]}.
+
+
+patch_lifetime(L0) ->
+    case lists:keytake(lifetime, 1, L0) of
+	false -> L0;
+	{value, {lifetime, Seconds}, L} ->
+	    [{lifetime, now_seconds() + Seconds}|L]
+    end.
+
+
+now_seconds() ->
+    calendar:datetime_to_gregorian_seconds({date(), time()}).
+
+
+filter_lifetime(L) ->
+    NowSeconds = now_seconds(),
+    lists:filter(
+      fun(#t{constraints = Constraints}) ->
+	      case lists:keyfind(lifetime, 1, Constraints) of
+		  {lifetime, Until} when Until < NowSeconds -> false;
+		  _ -> true
+	      end
+      end, L).

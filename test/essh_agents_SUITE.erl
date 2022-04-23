@@ -79,10 +79,11 @@ add_id_constrained(Config) ->
     Agent = ?config(agent, Config),
     Key = public_key:generate_key({namedCurve, ?secp384r1}),
     Comment = <<"comment">>,
-    Constraints = [confirm, {lifetime, 23}, {<<"foo">>,<<"bar">>}],
+    Constraints = [confirm, {lifetime, 1}, {<<"foo">>,<<"bar">>}],
     ok = essh_agentc:add_id_constrained(Agent, Key, Comment, Constraints),
-    ok = essh_agentc:add_id_constrained(Agent, Key, Comment, []),
-    {ok, [_|_]} = essh_agentc:request_identities(Agent).
+    {ok, [_|_]} = essh_agentc:request_identities(Agent),
+    timer:sleep(2000),
+    {ok, []} = essh_agentc:request_identities(Agent).
 
 
 lock(Config) ->
