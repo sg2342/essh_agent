@@ -117,7 +117,7 @@ remove_all_identities(Agent) ->
 add_id_constrained(Agent, PrivateKey, #{type_info := TypeInfo} = Cert, Comment,
 		   Constraints) ->
     CertBlob = essh_pkt:enc_cert(Cert),
-    Req = <<?BYTE(?SSH_AGENTC_ADD_IDENTITY),
+    Req = <<?BYTE(?SSH_AGENTC_ADD_ID_CONSTRAINED),
 	    ?BINARY(TypeInfo), ?BINARY(CertBlob),
 	    (essh_pkt:enc_private_key_cert(PrivateKey))/binary,
 	    ?BINARY(Comment),
@@ -129,7 +129,7 @@ add_id_constrained(Agent, PrivateKey, #{type_info := TypeInfo} = Cert, Comment,
 			 Comment :: binary(), [essh_constraint()]) ->
 	  ok | {error, Reason :: term()}.
 add_id_constrained(Agent, PrivateKey, Comment, Constraints) ->
-    Req = <<?BYTE(?SSH_AGENTC_ADD_IDENTITY),
+    Req = <<?BYTE(?SSH_AGENTC_ADD_ID_CONSTRAINED),
 	    (essh_pkt:enc_private_key(PrivateKey))/binary,
 	    ?BINARY(Comment),
 	    (essh_pkt:enc_constraints(Constraints))/binary>>,
