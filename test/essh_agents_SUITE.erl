@@ -107,7 +107,7 @@ certs(Config) ->
 	    {namedCurve, ?secp256r1}, {namedCurve, ?secp384r1},
 	    {namedCurve, ?secp521r1}],
     PrivKeys = [dsa_key(Config) | [public_key:generate_key(V) || V <- Gens]],
-    PubKeys = [essh_cert:pubkey(V) || V <- PrivKeys],
+    PubKeys = [essh_pkt:pubkey(V) || V <- PrivKeys],
     Keys = lists:zip(PrivKeys, PubKeys),
     Agent = ?config(agent, Config),
     Comment = <<"Comment">>,

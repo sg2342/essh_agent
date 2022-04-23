@@ -1,7 +1,7 @@
 -module(essh_cert).
 
 -export([key_sign/2, agent_sign/3, verify/1]).
--export([pubkey/1, signinfo/1, key_sign1/3, digest_type/1]).
+-export([signinfo/1, key_sign1/3, digest_type/1]).
 
 -include_lib("public_key/include/public_key.hrl").
 
@@ -53,7 +53,7 @@ verify1(TBS, DigestType, Signature, Key) ->
 
 -spec key_sign(essh_sign_request(), essh_private_key()) -> essh_certificate().
 key_sign(#{public_key := PublicKey} = Request, Key) ->
-    SignatureKey = pubkey(Key),
+    SignatureKey = essh_pkt:pubkey(Key),
     SignInfo = signinfo(SignatureKey),
     TypeInfo = <<(essh_pkt:key_type(PublicKey))/binary, "-cert-v01@openssh.com">>,
     Cert = Request#{type_info => TypeInfo,
@@ -95,14 +95,6 @@ agent_sign1({ok, <<?BINARY(I, _ILen), ?BINARY(S, _SLen)>>}, Cert) ->
     {ok, Cert#{signature => {I, S}}};
 agent_sign1({error, _} = E, _) -> E.
 
-
--spec pubkey(essh_private_key()) -> essh_public_key().
-pubkey(#'RSAPrivateKey'{ publicExponent = E, modulus = N }) ->
-    #'RSAPublicKey'{  publicExponent = E, modulus = N };
-pubkey(#'DSAPrivateKey'{p = P, q = Q, g = G, y = Y}) ->
-    {Y, #'Dss-Parms'{p = P, q = Q, g = G}};
-pubkey(#'ECPrivateKey'{parameters = C, publicKey = Q}) ->
-    {#'ECPoint'{point=Q}, C}.
 
 -spec signinfo(essh_public_key()) -> binary().
 signinfo(#'RSAPublicKey'{}) -> <<"rsa-sha2-256">>;

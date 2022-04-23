@@ -9,7 +9,7 @@
 
 -export([enc_constraints/1]).
 
--export([enc_tbs/1, key_type/1, oid2curvename/1, mpint/1]).
+-export([enc_tbs/1, key_type/1, oid2curvename/1, mpint/1, pubkey/1]).
 
 -export([enc_identities_answer/1, dec_add_id/1, dec_key_or_cert/1]).
 
@@ -77,10 +77,8 @@ dec_key_or_cert(Bin) -> dec_signature_key(Bin).
 
 
 -spec dec_add_id(binary()) ->
-	  {essh_private_key(), Comment :: binary(),
-	   [essh_constraint()]} |
-	  {essh_private_key(), essh_certificate(), Comment :: binary(),
-	   [essh_constraint()]}.
+	  {essh_certificate() | essh_public_key(), essh_private_key(),
+	   Comment :: binary(), [essh_constraint()]}.
 dec_add_id(<<?BINARY(TypeInfo, _TypeInfoLen),
 	     ?BINARY(CertBlob, _CertBlobLen),
 	     Rest/binary>>)
@@ -104,14 +102,14 @@ dec_add_id(<<?BINARY(TypeInfo, _TypeInfoLen),
 			   coefficient = IQMP,
 			   prime1 = P,
 			   prime2 = Q},
-    {Key, Comment, dec_constraints(Constraints)};
+    {pubkey(Key), Key, Comment, dec_constraints(Constraints)};
 dec_add_id(<<?BINARY(TypeInfo, _TypeInfoLen),
 	     ?MPINT(P, _PLen), ?MPINT(Q, _QLen), ?MPINT(G, _GLen),
 	     ?MPINT(X, _XLen), ?MPINT(Y, YLen),
 	     ?BINARY(Comment, _CommentLen), Constraints/binary>>)
   when TypeInfo == <<"ssh-dss">> ->
     Key = #'DSAPrivateKey'{p = P, q = Q, g = G, y = Y, x = X},
-    {Key, Comment, dec_constraints(Constraints)};
+    {pubkey(Key), Key, Comment, dec_constraints(Constraints)};
 dec_add_id(<<?BINARY(TypeInfo, _TypeInfoLen),
 	     ?BINARY(PK, PKLen), ?BINARY(PrivPub, PrivPubLen),
 	     ?BINARY(Comment, _CommentLen), Constraints/binary>>)
@@ -119,7 +117,7 @@ dec_add_id(<<?BINARY(TypeInfo, _TypeInfoLen),
     <<Priv:(PrivPubLen - PKLen)/binary, PK:PKLen/binary>> = PrivPub,
     Key = #'ECPrivateKey'{parameters = {namedCurve, ?'id-Ed25519'},
 			  privateKey = Priv, publicKey = PK},
-    {Key, Comment, dec_constraints(Constraints)};
+    {pubkey(Key), Key, Comment, dec_constraints(Constraints)};
 dec_add_id(<<?BINARY(TypeInfo, _TypeInfoLen),
 	     ?BINARY(C, _CLen), ?BINARY(Pub, _PubLen), ?BINARY(Priv, _PrivLen),
 	     ?BINARY(Comment, _CommentLen), Constraints/binary>>)
@@ -128,7 +126,7 @@ dec_add_id(<<?BINARY(TypeInfo, _TypeInfoLen),
        (TypeInfo == <<"ecdsa-sha2-nistp521">>) andalso (C == <<"nistp521">>) ->
     Key = #'ECPrivateKey'{parameters = {namedCurve, curvename2oid(C)},
 			  privateKey = Priv, publicKey = Pub},
-    {Key, Comment, dec_constraints(Constraints)}.
+    {pubkey(Key), Key, Comment, dec_constraints(Constraints)}.
 
 
 dec_add_id_c(#{type_info := TypeInfo,
@@ -139,7 +137,7 @@ dec_add_id_c(#{type_info := TypeInfo,
 	       ?BINARY(Comment, _CommentLen), Constraints/binary>>) ->
     <<Priv:(PrivPubLen - PKLen)/binary, PK:PKLen/binary>> = PrivPub,
     Key = #'ECPrivateKey'{parameters = Curve, privateKey = Priv, publicKey = PK},
-    {Key, Cert, Comment, dec_constraints(Constraints)};
+    {Cert, Key, Comment, dec_constraints(Constraints)};
 dec_add_id_c(#{type_info := TypeInfo,
 	       public_key := {#'ECPoint'{point = PK},
 			      {namedCurve, Oid} = Curve}} = Cert,
@@ -148,14 +146,14 @@ dec_add_id_c(#{type_info := TypeInfo,
 	       ?BINARY(Comment, _CommentLen), Constraints/binary>>) when
       Oid == ?secp256r1 ; Oid == ?secp384r1 ; Oid == ?secp521r1 ->
     Key = #'ECPrivateKey'{parameters = Curve, privateKey = Priv, publicKey = PK},
-    {Key, Cert, Comment, dec_constraints(Constraints)};
+    {Cert, Key, Comment, dec_constraints(Constraints)};
 dec_add_id_c(#{type_info := TypeInfo,
 	       public_key := {Y, #'Dss-Parms'{p = P, q = Q, g = G}}} = Cert,
 	     TypeInfo,
 	     <<?MPINT(X, _XLen),
 	       ?BINARY(Comment, _CommentLen), Constraints/binary>>) ->
     Key = #'DSAPrivateKey'{p = P, q = Q, g = G, y = Y, x = X},
-    {Key, Cert, Comment, dec_constraints(Constraints)};
+    {Cert, Key, Comment, dec_constraints(Constraints)};
 dec_add_id_c(#{type_info := TypeInfo,
 	       public_key := #'RSAPublicKey'{modulus = N
 					    ,publicExponent = E}} = Cert,
@@ -170,7 +168,7 @@ dec_add_id_c(#{type_info := TypeInfo,
 			   coefficient = IQMP,
 			   prime1 = P,
 			   prime2 = Q},
-    {Key, Cert, Comment, dec_constraints(Constraints)}.
+    {Cert, Key, Comment, dec_constraints(Constraints)}.
 
 
 -spec dec_constraints(binary()) -> [essh_constraint()].
@@ -367,7 +365,8 @@ enc_pubkey(#'RSAPublicKey'{modulus = N, publicExponent = E}) ->
     list_to_binary([mpint(E), mpint(N)]);
 enc_pubkey({Y,  #'Dss-Parms'{p = P, q = Q, g = G}}) ->
     list_to_binary([mpint(P), mpint(Q), mpint(G), mpint(Y)]);
-enc_pubkey({ #'ECPoint'{ point = PK }, {namedCurve, ?'id-Ed25519'} }) -> <<?BINARY(PK)>>;
+enc_pubkey({ #'ECPoint'{ point = PK }, {namedCurve, ?'id-Ed25519'} }) ->
+    <<?BINARY(PK)>>;
 enc_pubkey({ #'ECPoint'{ point = PK }, {namedCurve, Oid} }) ->
     <<?BINARY((oid2curvename(Oid))), ?BINARY(PK)>>.
 
@@ -389,6 +388,15 @@ key_type({_, #'Dss-Parms'{}}) -> <<"ssh-dss">>;
 key_type({#'ECPoint'{}, {namedCurve, ?'id-Ed25519'}}) -> <<"ssh-ed25519">>;
 key_type({#'ECPoint'{}, {namedCurve, Oid }}) ->
     <<"ecdsa-sha2-",(oid2curvename(Oid))/binary>>.
+
+
+-spec pubkey(essh_private_key()) -> essh_public_key().
+pubkey(#'RSAPrivateKey'{ publicExponent = E, modulus = N }) ->
+    #'RSAPublicKey'{  publicExponent = E, modulus = N };
+pubkey(#'DSAPrivateKey'{p = P, q = Q, g = G, y = Y}) ->
+    {Y, #'Dss-Parms'{p = P, q = Q, g = G}};
+pubkey(#'ECPrivateKey'{parameters = C, publicKey = Q}) ->
+    {#'ECPoint'{point=Q}, C}.
 
 
 enc_cert_type(user) -> <<?UINT32(1)>>;

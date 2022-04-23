@@ -46,19 +46,11 @@ req1(Pid, <<?BYTE(?SSH_AGENTC_SIGN_REQUEST),
     SignatureBlob = <<?BINARY(SignInfo), ?BINARY(Signature)>>,
     <<?BYTE(?SSH_AGENT_SIGN_RESPONSE), ?BINARY(SignatureBlob)>>;
 req1(Pid, <<?BYTE(?SSH_AGENTC_ADD_IDENTITY), Req/binary>>) ->
-    R = case essh_pkt:dec_add_id(Req) of
-	    {Priv, Comment, []} ->
-		#t{pubOrCert = essh_cert:pubkey(Priv),
-		   priv = Priv,
-		   comment = Comment,
-		   constraints = []};
-	    {Priv, Cert, Comment, []} ->
-		#t{pubOrCert = Cert,
-		   priv = Priv,
-		   comment = Comment,
-		   constraints = []}
-	end,
-    req2(gen_statem:call(Pid, {add, R}));
+    {PubOrCert, Priv, Comment, []} = essh_pkt:dec_add_id(Req),
+    req2(gen_statem:call(Pid, {add, #t{pubOrCert = PubOrCert,
+				       priv = Priv,
+				       comment = Comment,
+				       constraints = []}}));
 req1(Pid, <<?BYTE(?SSH_AGENTC_REMOVE_IDENTITY),
 	    ?BINARY(KeyOrCertBlob, _KeyOrCertBlobLen)>>) ->
     KeyOrCert = essh_pkt:dec_key_or_cert(KeyOrCertBlob),
@@ -66,19 +58,11 @@ req1(Pid, <<?BYTE(?SSH_AGENTC_REMOVE_IDENTITY),
 req1(Pid, <<?BYTE(?SSH_AGENTC_REMOVE_ALL_IDENTITIES)>>) ->
     req2(gen_statem:call(Pid, remove_all));
 req1(Pid, <<?BYTE(?SSH_AGENTC_ADD_ID_CONSTRAINED), Req/binary>>) ->
-    R = case essh_pkt:dec_add_id(Req) of
-	    {Priv, Comment, Constraints} ->
-		#t{pubOrCert = essh_cert:pubkey(Priv),
-		   priv = Priv,
-		   comment = Comment,
-		   constraints = Constraints};
-	    {Priv, Cert, Comment, Constraints} ->
-		#t{pubOrCert = Cert,
-		   priv = Priv,
-		   comment = Comment,
-		   constraints = Constraints}
-	end,
-    req2(gen_statem:call(Pid, {add, R}));
+    {PubOrCert, Priv, Comment, Constraints} = essh_pkt:dec_add_id(Req),
+    req2(gen_statem:call(Pid, {add, #t{pubOrCert = PubOrCert,
+				       priv = Priv,
+				       comment = Comment,
+				       constraints = Constraints}}));
 req1(Pid, <<?BYTE(?SSH_AGENTC_LOCK), ?BINARY(Password, _PasswordLen)>>) ->
     req2(gen_statem:call(Pid, {lock, Password}));
 req1(Pid, <<?BYTE(?SSH_AGENTC_UNLOCK), ?BINARY(Password, _PasswordLen)>>) ->
