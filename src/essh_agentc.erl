@@ -98,8 +98,12 @@ add_identity(Agent, PrivateKey, Comment) ->
     simple_req(Agent, Req).
 
 
--spec remove_identity(essh_agent(), essh_public_key()) ->
+-spec remove_identity(essh_agent(), essh_public_key() | essh_certificate()) ->
 	  ok | {error, Reason :: term()}.
+remove_identity(Agent, #{type_info := _} = Cert) ->
+    CertBlob = essh_pkt:enc_cert(Cert),
+    Req = <<?BYTE(?SSH_AGENTC_REMOVE_IDENTITY), ?BINARY(CertBlob)>>,
+    simple_req(Agent, Req);
 remove_identity(Agent, PublicKey) ->
     KeyBlob = essh_pkt:enc_signature_key(PublicKey),
     Req = <<?BYTE(?SSH_AGENTC_REMOVE_IDENTITY), ?BINARY(KeyBlob)>>,

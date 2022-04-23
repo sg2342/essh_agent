@@ -9,13 +9,13 @@
 -export([request_identities/1, sign_request/1, add_identity/1, remove_identity/1,
 	 remove_all_identities/1, add_id_constrained/1, add_smartcard_key/1,
 	 remove_smartcard_key/1, lock/1, add_smartcard_key_constrained/1,
-	 add_certificate/1,
+	 add_certificate/1, remove_certificate/1,
 	 cover1/1, cover2/1]).
 
 all() -> [request_identities, sign_request, add_identity, remove_identity,
 	  remove_all_identities, add_id_constrained, add_smartcard_key,
 	  remove_smartcard_key, lock, add_smartcard_key_constrained,
-	  add_certificate,
+	  add_certificate, remove_certificate,
 	  cover1, cover2].
 
 
@@ -165,6 +165,24 @@ add_certificate(Config) ->
     Cert = CertOfIds().
 
 
+remove_certificate(Config) ->
+    Agent = {local, ?config(agent_sock_path, Config)},
+    {ok, []} = essh_agentc:request_identities(Agent),
+    tst_util:add_openssh_key("id_ed25519", Config),
+    CertOfIds =
+	fun() ->
+		{ok, L} = essh_agentc:request_identities(Agent),
+		[Cert] = lists:filtermap(
+			   fun({#{cert_type := _} = C, _}) -> {true, C};
+			      (_) -> false
+			   end, L),
+		Cert
+	end,
+    #{public_key := Pub} = Cert = CertOfIds(),
+    ok = essh_agentc:remove_identity(Agent, Cert),
+    {ok, [{Pub, _}]} = essh_agentc:request_identities(Agent),
+    ok = essh_agentc:remove_identity(Agent, Pub),
+    {ok,[]} = essh_agentc:request_identities(Agent).
 
 
 cover1(_Config) ->
