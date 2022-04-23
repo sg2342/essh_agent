@@ -9,13 +9,13 @@
 -export([request_identities/1, sign_request/1, add_identity/1, remove_identity/1,
 	 remove_all_identities/1, add_id_constrained/1, add_smartcard_key/1,
 	 remove_smartcard_key/1, lock/1, add_smartcard_key_constrained/1,
-	 add_certificate/1, remove_certificate/1,
+	 add_certificate/1, remove_certificate/1, sign_with_cert/1,
 	 cover1/1, cover2/1]).
 
 all() -> [request_identities, sign_request, add_identity, remove_identity,
 	  remove_all_identities, add_id_constrained, add_smartcard_key,
 	  remove_smartcard_key, lock, add_smartcard_key_constrained,
-	  add_certificate, remove_certificate,
+	  add_certificate, remove_certificate, sign_with_cert,
 	  cover1, cover2].
 
 
@@ -145,44 +145,35 @@ add_certificate(Config) ->
     KeyDir = ?config(key_dir, Config),
     {ok, []} = essh_agentc:request_identities(Agent),
     tst_util:add_openssh_key("id_ed25519", Config),
-    CertOfIds =
-	fun() ->
-		{ok, L} = essh_agentc:request_identities(Agent),
-		[Cert] = lists:filtermap(
-			   fun({#{cert_type := _} = C, _}) -> {true, C};
-			      (_) -> false
-			   end, L),
-		Cert
-	end,
-    Cert = CertOfIds(),
+    Cert = cert_of_ids(Agent),
     ok = essh_agentc:remove_all_identities(Agent),
     {ok, KeyBin} = file:read_file(filename:join(KeyDir, "id_ed25519")),
     [{#'ECPrivateKey'{} = Key, _}, _] = ssh_file:decode(KeyBin, openssh_key_v1),
     ok = essh_agentc:add_identity(Agent, Key, Cert, <<>>),
-    Cert = CertOfIds(),
+    Cert = cert_of_ids(Agent),
     ok = essh_agentc:remove_all_identities(Agent),
     ok = essh_agentc:add_id_constrained(Agent, Key, Cert, <<>>, [confirm]),
-    Cert = CertOfIds().
+    Cert = cert_of_ids(Agent).
 
 
 remove_certificate(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
     {ok, []} = essh_agentc:request_identities(Agent),
     tst_util:add_openssh_key("id_ed25519", Config),
-    CertOfIds =
-	fun() ->
-		{ok, L} = essh_agentc:request_identities(Agent),
-		[Cert] = lists:filtermap(
-			   fun({#{cert_type := _} = C, _}) -> {true, C};
-			      (_) -> false
-			   end, L),
-		Cert
-	end,
-    #{public_key := Pub} = Cert = CertOfIds(),
+    #{public_key := Pub} = Cert = cert_of_ids(Agent),
     ok = essh_agentc:remove_identity(Agent, Cert),
     {ok, [{Pub, _}]} = essh_agentc:request_identities(Agent),
     ok = essh_agentc:remove_identity(Agent, Pub),
     {ok,[]} = essh_agentc:request_identities(Agent).
+
+
+sign_with_cert(Config) ->
+    Agent = {local, ?config(agent_sock_path, Config)},
+    tst_util:add_openssh_key("id_ed25519", Config),
+    #{public_key := Pub} = Cert = cert_of_ids(Agent),
+    ok = essh_agentc:remove_identity(Agent, Pub),
+    {ok, [{Cert, _}]} = essh_agentc:request_identities(Agent),
+    {ok, _} = essh_agentc:sign_request(Agent, <<>>, Cert).
 
 
 cover1(_Config) ->
@@ -226,15 +217,23 @@ generate_testkeys(Dir) ->
     L = [{Bits, Type, filename:join(Dir, Name)} || {Bits, Type, Name} <- L0],
     ok = lists:foreach(fun generate_testkeys1/1,L),
     {0,_} = tst_util:spwn(["ssh-keygen", "-q", "-s", filename:join(Dir, "id_ed25519"),
-		  "-I", "test.host", "-h", "-n", "test.host","-h",
-		  filename:join(Dir, "id_ed25519.pub")],[]),
+			   "-I", "test.host", "-h", "-n", "test.host","-h",
+			   filename:join(Dir, "id_ed25519.pub")],[]),
     ok.
 
 generate_testkeys1({undefined, Type, OutputKeyfile}) ->
     {0,_} = tst_util:spwn(["ssh-keygen", "-N", "", "-C", "some comment", "-t", Type,
-		  "-f", OutputKeyfile],[]);
+			   "-f", OutputKeyfile],[]);
 generate_testkeys1({Bits, Type, OutputKeyfile}) ->
     {0,_} = tst_util:spwn(["ssh-keygen", "-N", "", "-C", "some comment",
-		  "-b", Bits, "-t", Type, "-f", OutputKeyfile],[]).
+			   "-b", Bits, "-t", Type, "-f", OutputKeyfile],[]).
 
 
+cert_of_ids(Agent) ->
+    {ok, L} = essh_agentc:request_identities(Agent),
+    [Cert| _] =
+	lists:filtermap(
+	  fun({#{cert_type := _} = C, _}) ->
+		  {true , C};
+	     (_) -> false end, L),
+    Cert.

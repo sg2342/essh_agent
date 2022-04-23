@@ -62,8 +62,15 @@ request_identities4({K, C}) ->
     end.
 
 
--spec sign_request(essh_agent(), TBS :: binary(), essh_public_key()) ->
+-spec sign_request(essh_agent(), TBS :: binary(),
+		   essh_public_key() | essh_certificate()) ->
 	  {ok, Signature :: binary()} | {error, Reason :: term()}.
+sign_request(Agent, TBS, #{type_info := _} = Cert) ->
+    CertBlob = essh_pkt:enc_cert(Cert),
+    Flags = ?SSH_AGENT_RSA_SHA2_512 + ?SSH_AGENT_RSA_SHA2_256,
+    Req = <<?BYTE(?SSH_AGENTC_SIGN_REQUEST),
+	    ?BINARY(CertBlob), ?BINARY(TBS), ?UINT32(Flags)>>,
+    sign_request1(req(Agent, Req));
 sign_request(Agent, TBS, SignatureKey) ->
     KeyBlob = essh_pkt:enc_signature_key(SignatureKey),
     Flags = ?SSH_AGENT_RSA_SHA2_512 + ?SSH_AGENT_RSA_SHA2_256,
