@@ -148,7 +148,13 @@ add_certificate(Config) ->
     Cert = cert_of_ids(Agent),
     ok = essh_agentc:remove_all_identities(Agent),
     {ok, KeyBin} = file:read_file(filename:join(KeyDir, "id_ed25519")),
-    [{#'ECPrivateKey'{} = Key, _}, _] = ssh_file:decode(KeyBin, openssh_key_v1),
+    Key = case ssh_file:decode(KeyBin, openssh_key_v1) of
+	      [{#'ECPrivateKey'{} = K, _}, _] -> K;
+	      [{{ed_pri,ed25519,Pub,Priv}, _}, _] ->
+		  #'ECPrivateKey'{privateKey = Priv,
+				  publicKey = Pub,
+				  parameters = {namedCurve, ?'id-Ed25519'}}
+	  end,
     ok = essh_agentc:add_identity(Agent, Key, Cert, <<>>),
     Cert = cert_of_ids(Agent),
     ok = essh_agentc:remove_all_identities(Agent),
