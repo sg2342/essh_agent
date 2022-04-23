@@ -13,12 +13,12 @@
 -type essh_certificate() :: essh_pkt:essh_certificate().
 -type essh_public_key() :: essh_pkt:essh_public_key().
 -type essh_private_key() :: essh_pkt:essh_private_key().
--type essh_constraints() :: essh_pkt:essh_constraints().
+-type essh_constraint() :: essh_pkt:essh_constraint().
 
 -record(t,{pubOrCert :: essh_public_key() | essh_certificate(),
 	   priv :: essh_private_key(),
 	   comment :: binary(),
-	   constraints :: essh_constraints()}).
+	   constraints :: [essh_constraint()]}).
 
 start_link() -> gen_statem:start_link(?MODULE, [], []).
 
@@ -37,12 +37,12 @@ req1(Pid, <<?BYTE(?SSH_AGENTC_REQUEST_IDENTITIES)>>) ->
     <<?BYTE(?SSH_AGENT_IDENTITIES_ANSWER),
       (essh_pkt:enc_identities_answer(Ids))/binary>>;
 req1(Pid, <<?BYTE(?SSH_AGENTC_SIGN_REQUEST),
-	    ?BINARY(KeyOrCertBlob, _KeyOrCertBlobLen),
+	    ?BINARY(PubOrCertBlob, _PubOrCertBlobLen),
 	    ?BINARY(TBS, _TBSLen),
 	    ?UINT32(_Flags)>>) ->
-    KeyOrCert = essh_pkt:dec_key_or_cert(KeyOrCertBlob),
+    PubOrCert = essh_pkt:dec_key_or_cert(PubOrCertBlob),
     {ok, {SignInfo, Signature}} =
-	gen_statem:call(Pid, {sign_request, KeyOrCert, TBS}),
+	gen_statem:call(Pid, {sign_request, PubOrCert, TBS}),
     SignatureBlob = <<?BINARY(SignInfo), ?BINARY(Signature)>>,
     <<?BYTE(?SSH_AGENT_SIGN_RESPONSE), ?BINARY(SignatureBlob)>>;
 req1(Pid, <<?BYTE(?SSH_AGENTC_ADD_IDENTITY), Req/binary>>) ->
@@ -52,9 +52,9 @@ req1(Pid, <<?BYTE(?SSH_AGENTC_ADD_IDENTITY), Req/binary>>) ->
 				       comment = Comment,
 				       constraints = []}}));
 req1(Pid, <<?BYTE(?SSH_AGENTC_REMOVE_IDENTITY),
-	    ?BINARY(KeyOrCertBlob, _KeyOrCertBlobLen)>>) ->
-    KeyOrCert = essh_pkt:dec_key_or_cert(KeyOrCertBlob),
-    req2(gen_statem:call(Pid, {remove, KeyOrCert}));
+	    ?BINARY(PubOrCertBlob, _PubOrCertBlobLen)>>) ->
+    PubOrCert = essh_pkt:dec_key_or_cert(PubOrCertBlob),
+    req2(gen_statem:call(Pid, {remove, PubOrCert}));
 req1(Pid, <<?BYTE(?SSH_AGENTC_REMOVE_ALL_IDENTITIES)>>) ->
     req2(gen_statem:call(Pid, remove_all));
 req1(Pid, <<?BYTE(?SSH_AGENTC_ADD_ID_CONSTRAINED), Req/binary>>) ->
@@ -113,6 +113,7 @@ handle_event({call, From}, _,_,_) ->
     {keep_state_and_data, [{reply, From, {error, agent_failure}}]}.
 
 
+-spec patch_lifetime([essh_constraint()]) -> [essh_constraint()].
 patch_lifetime(L0) ->
     case lists:keytake(lifetime, 1, L0) of
 	false -> L0;
@@ -121,10 +122,12 @@ patch_lifetime(L0) ->
     end.
 
 
+-spec now_seconds() -> non_neg_integer().
 now_seconds() ->
     calendar:datetime_to_gregorian_seconds({date(), time()}).
 
 
+-spec filter_lifetime([#t{}]) -> [#t{}].
 filter_lifetime(L) ->
     NowSeconds = now_seconds(),
     lists:filter(
