@@ -4,25 +4,33 @@
 
 -export([init/1, handle_event/4, callback_mode/0]).
 
--export([start_link/0]).
+-export([start_link/1, start_link/0]).
 -export([req/2]).
 
 -include("essh_binary.hrl").
 -include("essh_agent_constants.hrl").
 
+-include_lib("stdlib/include/ms_transform.hrl").
+
 -type essh_certificate() :: essh_pkt:essh_certificate().
 -type essh_public_key() :: essh_pkt:essh_public_key().
 -type essh_private_key() :: essh_pkt:essh_private_key().
--type essh_constraint() :: essh_pkt:essh_constraint().
 
 -record(t,{pubOrCert :: essh_public_key() | essh_certificate(),
 	   priv :: essh_private_key(),
 	   comment :: binary(),
-	   constraints :: [essh_constraint()]}).
+	   confirm :: boolean(),
+	   expire :: non_neg_integer() | undefined}).
 
-start_link() -> gen_statem:start_link(?MODULE, [], []).
+start_link() -> start_link([]).
 
-init([]) -> {ok, unlocked, []}.
+start_link(Opts) when is_list(Opts) ->
+    gen_statem:start_link(?MODULE, Opts, []).
+
+
+init(_Opts) ->
+    Tab = ets:new(?MODULE, [{keypos, #t.pubOrCert}, private]),
+    {ok, unlocked, Tab}.
 
 
 callback_mode() -> handle_event_function.
@@ -50,7 +58,8 @@ req1(Pid, <<?BYTE(?SSH_AGENTC_ADD_IDENTITY), Req/binary>>) ->
     req2(gen_statem:call(Pid, {add, #t{pubOrCert = PubOrCert,
 				       priv = Priv,
 				       comment = Comment,
-				       constraints = []}}));
+				       confirm = false,
+				       expire = undefined}}));
 req1(Pid, <<?BYTE(?SSH_AGENTC_REMOVE_IDENTITY),
 	    ?BINARY(PubOrCertBlob, _PubOrCertBlobLen)>>) ->
     PubOrCert = essh_pkt:dec_key_or_cert(PubOrCertBlob),
@@ -59,10 +68,17 @@ req1(Pid, <<?BYTE(?SSH_AGENTC_REMOVE_ALL_IDENTITIES)>>) ->
     req2(gen_statem:call(Pid, remove_all));
 req1(Pid, <<?BYTE(?SSH_AGENTC_ADD_ID_CONSTRAINED), Req/binary>>) ->
     {PubOrCert, Priv, Comment, Constraints} = essh_pkt:dec_add_id(Req),
+    Confirm = proplists:get_bool(confirm, Constraints),
+    Expire = case proplists:get_value(lifetime, Constraints) of
+		 N when is_integer(N) ->
+		     now_seconds() + N;
+		 _ -> undefined
+	     end,
     req2(gen_statem:call(Pid, {add, #t{pubOrCert = PubOrCert,
 				       priv = Priv,
 				       comment = Comment,
-				       constraints = Constraints}}));
+				       confirm = Confirm,
+				       expire = Expire}}));
 req1(Pid, <<?BYTE(?SSH_AGENTC_LOCK), ?BINARY(Password, _PasswordLen)>>) ->
     req2(gen_statem:call(Pid, {lock, Password}));
 req1(Pid, <<?BYTE(?SSH_AGENTC_UNLOCK), ?BINARY(Password, _PasswordLen)>>) ->
@@ -74,37 +90,32 @@ req2(_) -> <<?BYTE(?SSH_AGENT_FAILURE)>>.
 
 handle_event({call, From}, list, locked, _) ->
     {keep_state_and_data, [{reply, From, {ok, []}}]};
-handle_event({call, From}, list, unlocked, L0) ->
-    L = filter_lifetime(L0),
-    LL = [{Id, C} || #t{pubOrCert = Id, comment = C} <- L],
-    {keep_state, L, [{reply, From, {ok, LL}}]};
-handle_event({call, From}, {add, #t{constraints = Constraints0} = Id}, unlocked, L0) ->
-    Constraints = patch_lifetime(Constraints0),
-    L = lists:keystore(Id#t.pubOrCert, #t.pubOrCert, L0,
-		       Id#t{constraints = Constraints}),
-    {keep_state, L, [{reply, From, ok}]};
-handle_event({call, From}, {sign_request, PubOrCert, TBS}, unlocked, L0) ->
-    L = filter_lifetime(L0),
-    R = case lists:keyfind(PubOrCert, #t.pubOrCert, L) of
-	    false -> {error, no_matching_key};
-	    #t{pubOrCert = #{public_key := Pub}, priv = Priv} ->
-		SignInfo = essh_cert:signinfo(Pub),
-		DigestType = essh_cert:digest_type(SignInfo),
-		{ok, {SignInfo, essh_cert:key_sign1(TBS, DigestType, Priv)}};
-	    #t{pubOrCert = Pub, priv = Priv} ->
-		SignInfo = essh_cert:signinfo(Pub),
-		DigestType = essh_cert:digest_type(SignInfo),
+handle_event({call, From}, list, unlocked, Tab) ->
+    expire(Tab),
+    L = [{Id, C} || #t{pubOrCert = Id, comment = C} <- ets:tab2list(Tab)],
+    {keep_state_and_data, [{reply, From, {ok, L}}]};
+handle_event({call, From}, {add, Id}, unlocked, Tab) ->
+    ets:insert(Tab, Id),
+    {keep_state_and_data, [{reply, From, ok}]};
+handle_event({call, From}, {sign_request, PubOrCert, TBS}, unlocked, Tab) ->
+    expire(Tab),
+    R = case ets:lookup(Tab, PubOrCert) of
+	    [] -> {error, no_matching_key};
+	    [#t{ priv = Priv }] ->
+		{SignInfo, DigestType} = signinfo_digetstype(PubOrCert),
 		{ok, {SignInfo, essh_cert:key_sign1(TBS, DigestType, Priv)}}
 	end,
-    {keep_state, L, [{reply, From, R}]};
-handle_event({call, From}, {remove, PubOrCert}, unlocked, L0) ->
-    L1 = filter_lifetime(L0),
-    case lists:keytake(PubOrCert, #t.pubOrCert, L1) of
-	false -> {keep_state, L1, [{reply, From, {error, no_matching_key}}]};
-	{value, _, L} -> {keep_state, L, [{reply, From, ok}]}
-    end;
-handle_event({call, From}, remove_all, unlocked, _) ->
-    {keep_state, [], [{reply, From, ok}]};
+    {keep_state_and_data, [{reply, From, R}]};
+handle_event({call, From}, {remove, PubOrCert}, unlocked, Tab) ->
+    expire(Tab),
+    R = case ets:lookup(Tab, PubOrCert) of
+	    [] -> {error, no_matching_key};
+	    _ -> ets:delete(Tab, PubOrCert), ok
+	end,
+    {keep_state_and_data, [{reply, From, R}]};
+handle_event({call, From}, remove_all, unlocked, Tab) ->
+    ets:delete_all_objects(Tab),
+    {keep_state_and_data, [{reply, From, ok}]};
 handle_event({call, From}, {lock, Password}, unlocked, L) ->
     {next_state, locked, {Password, L}, [{reply, From, ok}]};
 handle_event({call, From}, {unlock, Password}, locked, {Password, L}) ->
@@ -113,27 +124,20 @@ handle_event({call, From}, _,_,_) ->
     {keep_state_and_data, [{reply, From, {error, agent_failure}}]}.
 
 
--spec patch_lifetime([essh_constraint()]) -> [essh_constraint()].
-patch_lifetime(L0) ->
-    case lists:keytake(lifetime, 1, L0) of
-	false -> L0;
-	{value, {lifetime, Seconds}, L} ->
-	    [{lifetime, now_seconds() + Seconds}|L]
-    end.
-
-
 -spec now_seconds() -> non_neg_integer().
-now_seconds() ->
-    calendar:datetime_to_gregorian_seconds({date(), time()}).
+now_seconds() -> calendar:datetime_to_gregorian_seconds({date(), time()}).
 
 
--spec filter_lifetime([#t{}]) -> [#t{}].
-filter_lifetime(L) ->
+expire(Tab) ->
     NowSeconds = now_seconds(),
-    lists:filter(
-      fun(#t{constraints = Constraints}) ->
-	      case lists:keyfind(lifetime, 1, Constraints) of
-		  {lifetime, Until} when Until < NowSeconds -> false;
-		  _ -> true
-	      end
-      end, L).
+    MS = ets:fun2ms(
+	   fun(#t{expire = Exp}) when is_integer(Exp), Exp < NowSeconds -> true;
+	      (_) -> false end),
+    ets:select_delete(Tab, MS).
+
+
+signinfo_digetstype(#{public_key := Pub}) -> signinfo_digetstype(Pub);
+signinfo_digetstype(Pub) ->
+    SignInfo = essh_cert:signinfo(Pub),
+    DigestType = essh_cert:digest_type(SignInfo),
+    {SignInfo, DigestType}.
