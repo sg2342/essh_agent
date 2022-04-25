@@ -7,32 +7,44 @@
 	 init_per_testcase/2, end_per_testcase/2]).
 
 -export([request_identities/1, sign_request/1, add_identity/1, remove_identity/1,
-	 remove_all_identities/1, add_id_constrained/1, lock/1, certs/1]).
+	 remove_all_identities/1, add_id_constrained/1, lock/1, certs/1,
+	 confirm/1]).
+
 
 all() -> [request_identities, sign_request, add_identity, remove_identity,
-	  remove_all_identities, add_id_constrained, lock, certs].
+	  remove_all_identities, add_id_constrained, lock, certs,
+	  confirm].
+
 
 init_per_suite(Config) ->
     {ok, Started} = application:ensure_all_started(ssh),
     [{started_applications, Started} | Config].
+
 
 end_per_suite(Config0) ->
     {value, {_, Started}, Config} = lists:keytake(started_applications, 1, Config0),
     lists:foreach(fun application:stop/1, lists:reverse(Started)),
     Config.
 
+init_per_testcase(confirm, Config) ->
+    {ok, Pid} = essh_agents:start_link([{confirm, fun(_) -> false end}]),
+    F = fun(Req) -> {ok, essh_agents:req(Pid, Req)} end,
+    [{agent, {function, F}}, {agent_pid, Pid} | Config];
 init_per_testcase(_TC,Config) ->
     {ok, Pid} = essh_agents:start_link(),
     F = fun(Req) -> {ok, essh_agents:req(Pid, Req)} end,
     [{agent, {function, F}}, {agent_pid, Pid} | Config].
 
+
 end_per_testcase(_TC,Config) ->
     gen_statem:stop(?config(agent_pid, Config)),
     Config.
 
+
 request_identities(Config) ->
     Agent = ?config(agent, Config),
     {ok, []} = essh_agentc:request_identities(Agent).
+
 
 sign_request(Config) ->
     Agent = ?config(agent, Config),
@@ -103,6 +115,7 @@ lock(Config) ->
     ok = essh_agentc:unlock(Agent, Password),
     {ok, [{Pub, Comment}]} = essh_agentc:request_identities(Agent).
 
+
 certs(Config) ->
     Gens = [{rsa, 1024, 65537}, {namedCurve, ?'id-Ed25519'},
 	    {namedCurve, ?secp256r1}, {namedCurve, ?secp384r1},
@@ -131,6 +144,17 @@ certs(Config) ->
 	      {ok, _} = essh_agentc:sign_request(Agent, <<>>, Cert),
 	      ok = essh_agentc:remove_identity(Agent, Cert)
       end, Keys).
+
+
+confirm(Config) ->
+    Agent = ?config(agent, Config),
+    Key = public_key:generate_key({namedCurve, ?'id-Ed25519'}),
+    Comment = <<"comment">>,
+    Constraints = [confirm],
+    ok = essh_agentc:add_id_constrained(Agent, Key, Comment, Constraints),    
+    {ok, [{Pub, Comment}]} = essh_agentc:request_identities(Agent),
+    {error, agent_failure} = essh_agentc:sign_request(Agent, <<>>, Pub).
+
 
 dsa_key(Config) ->
     FN = filename:join(?config(data_dir, Config), "dsa.pem"),

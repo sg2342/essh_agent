@@ -24,13 +24,18 @@
 
 start_link() -> start_link([]).
 
+-spec start_link([{confirm, function()}]) -> 'ignore' | {'error', _} | {'ok', pid()}.
 start_link(Opts) when is_list(Opts) ->
     gen_statem:start_link(?MODULE, Opts, []).
 
 
-init(_Opts) ->
+init(Opts) ->
+    Confirm = case proplists:get_value(confirm, Opts, undefined) of
+		  F when is_function(F) -> F;
+		  _ -> fun(_) -> true end
+	      end,
     Tab = ets:new(?MODULE, [{keypos, #t.pubOrCert}, private]),
-    {ok, unlocked, Tab}.
+    {ok, unlocked, #{tab =>Tab, confirm_fun => Confirm}}.
 
 
 callback_mode() -> handle_event_function.
@@ -50,7 +55,7 @@ req1(Pid, <<?BYTE(?SSH_AGENTC_SIGN_REQUEST),
 	    ?UINT32(_Flags)>>) ->
     PubOrCert = essh_pkt:dec_key_or_cert(PubOrCertBlob),
     {ok, {SignInfo, Signature}} =
-	gen_statem:call(Pid, {sign_request, PubOrCert, TBS}),
+	gen_statem:call(Pid, {sign, PubOrCert, TBS}),
     SignatureBlob = <<?BINARY(SignInfo), ?BINARY(Signature)>>,
     <<?BYTE(?SSH_AGENT_SIGN_RESPONSE), ?BINARY(SignatureBlob)>>;
 req1(Pid, <<?BYTE(?SSH_AGENTC_ADD_IDENTITY), Req/binary>>) ->
@@ -70,10 +75,8 @@ req1(Pid, <<?BYTE(?SSH_AGENTC_ADD_ID_CONSTRAINED), Req/binary>>) ->
     {PubOrCert, Priv, Comment, Constraints} = essh_pkt:dec_add_id(Req),
     Confirm = proplists:get_bool(confirm, Constraints),
     Expire = case proplists:get_value(lifetime, Constraints) of
-		 N when is_integer(N) ->
-		     now_seconds() + N;
-		 _ -> undefined
-	     end,
+		 N when is_integer(N) -> now_seconds() + N;
+		 _ -> undefined end,
     req2(gen_statem:call(Pid, {add, #t{pubOrCert = PubOrCert,
 				       priv = Priv,
 				       comment = Comment,
@@ -90,36 +93,32 @@ req2(_) -> <<?BYTE(?SSH_AGENT_FAILURE)>>.
 
 handle_event({call, From}, list, locked, _) ->
     {keep_state_and_data, [{reply, From, {ok, []}}]};
-handle_event({call, From}, list, unlocked, Tab) ->
+handle_event({call, From}, list, unlocked, #{tab := Tab}) ->
     expire(Tab),
     L = [{Id, C} || #t{pubOrCert = Id, comment = C} <- ets:tab2list(Tab)],
     {keep_state_and_data, [{reply, From, {ok, L}}]};
-handle_event({call, From}, {add, Id}, unlocked, Tab) ->
+handle_event({call, From}, {add, Id}, unlocked, #{tab := Tab}) ->
     ets:insert(Tab, Id),
     {keep_state_and_data, [{reply, From, ok}]};
-handle_event({call, From}, {sign_request, PubOrCert, TBS}, unlocked, Tab) ->
+handle_event({call, From}, {sign, PubOrCert, TBS}, unlocked,
+	     #{tab := Tab, confirm_fun := ConfirmFun}) ->
     expire(Tab),
-    R = case ets:lookup(Tab, PubOrCert) of
-	    [] -> {error, no_matching_key};
-	    [#t{ priv = Priv }] ->
-		{SignInfo, DigestType} = signinfo_digetstype(PubOrCert),
-		{ok, {SignInfo, essh_cert:key_sign1(TBS, DigestType, Priv)}}
-	end,
+    R = do_sign(ets:lookup(Tab, PubOrCert), TBS, ConfirmFun),
     {keep_state_and_data, [{reply, From, R}]};
-handle_event({call, From}, {remove, PubOrCert}, unlocked, Tab) ->
+handle_event({call, From}, {remove, PubOrCert}, unlocked, #{tab := Tab}) ->
     expire(Tab),
     R = case ets:lookup(Tab, PubOrCert) of
 	    [] -> {error, no_matching_key};
 	    _ -> ets:delete(Tab, PubOrCert), ok
 	end,
     {keep_state_and_data, [{reply, From, R}]};
-handle_event({call, From}, remove_all, unlocked, Tab) ->
+handle_event({call, From}, remove_all, unlocked, #{tab := Tab}) ->
     ets:delete_all_objects(Tab),
     {keep_state_and_data, [{reply, From, ok}]};
-handle_event({call, From}, {lock, Password}, unlocked, L) ->
-    {next_state, locked, {Password, L}, [{reply, From, ok}]};
-handle_event({call, From}, {unlock, Password}, locked, {Password, L}) ->
-    {next_state, unlocked, L, [{reply, From, ok}]};
+handle_event({call, From}, {lock, Password}, unlocked, D) ->
+    {next_state, locked, {Password, D}, [{reply, From, ok}]};
+handle_event({call, From}, {unlock, Password}, locked, {Password, D}) ->
+    {next_state, unlocked, D, [{reply, From, ok}]};
 handle_event({call, From}, _,_,_) ->
     {keep_state_and_data, [{reply, From, {error, agent_failure}}]}.
 
@@ -141,3 +140,17 @@ signinfo_digetstype(Pub) ->
     SignInfo = essh_cert:signinfo(Pub),
     DigestType = essh_cert:digest_type(SignInfo),
     {SignInfo, DigestType}.
+
+
+do_sign([], _, _) -> {error, no_matching_key};
+do_sign([#t{ pubOrCert = PubOrCert, confirm = true, comment = Comment} = Id],
+	TBS, ConfirmFun) ->
+    case ConfirmFun({PubOrCert, Comment}) of
+	true -> do_sign1(Id, TBS);
+	false -> {error, not_confirmed}
+    end;
+do_sign([#t{ confirm = false } = Id], TBS, _) -> do_sign1(Id, TBS).
+
+do_sign1(#t{ pubOrCert = PubOrCert, priv = Priv}, TBS) ->
+	{SignInfo, DigestType} = signinfo_digetstype(PubOrCert),
+    {ok, {SignInfo, essh_cert:key_sign1(TBS, DigestType, Priv)}}.
