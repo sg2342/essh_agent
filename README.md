@@ -23,4 +23,4 @@ Build essh_agent escript
 Test
 ----
 
-    $ rebar3 as test do dialyzer,xref,ct,proper,cover
+    $ rebar3 as test do fmt,lint,dialyzer,xref,ct,proper,cover
