@@ -1,6 +1,6 @@
--define(BYTE(X),          (X):8/unsigned-big-integer).
--define(UINT32(X),        (X):32/unsigned-big-integer).
--define(UINT64(X),        (X):64/unsigned-big-integer).
--define(BINARY(X,Len),    ?UINT32(Len), X:Len/binary ).
--define(MPINT(I,Len),     ?UINT32(Len), I:Len/big-signed-integer-unit:8 ).
--define(BINARY(X),        ?UINT32(size(X)), X/binary).
+-define(BYTE(X), (X):8 / unsigned - big - integer).
+-define(UINT32(X), (X):32 / unsigned - big - integer).
+-define(UINT64(X), (X):64 / unsigned - big - integer).
+-define(BINARY(X, Len), ?UINT32(Len), X:Len / binary).
+-define(MPINT(I, Len), ?UINT32(Len), I:Len / big - signed - integer - unit:8).
+-define(BINARY(X), ?UINT32(size(X)), X / binary).
