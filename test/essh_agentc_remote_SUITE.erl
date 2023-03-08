@@ -78,19 +78,13 @@ openssh_connection(Port, Config) ->
     SockPath = ?config(agent_sock_path, Config),
     spawn_link(fun() ->
         tst_util:spwn(
-            [
-                "ssh",
-                "-q",
-                "-A",
-                "-N",
-                "-p",
-                integer_to_list(Port),
-                "-o",
-                "StrictHostKeyChecking=no",
-                "-o",
-                "UserKnownHostsFile=/dev/null",
-                "user@localhost"
-            ],
+            openssh_connection1(
+                Port,
+                [
+                    "-A",
+                    "user@localhost"
+                ]
+            ),
             [{"SSH_AUTH_SOCK", SockPath}]
         )
     end).
@@ -99,21 +93,29 @@ openssh_connection_no_agent(Port, Config) ->
     SockPath = ?config(agent_sock_path, Config),
     spawn_link(fun() ->
         tst_util:spwn(
-            [
-                "ssh",
-                "-q",
-                "-N",
-                "-p",
-                integer_to_list(Port),
-                "-o",
-                "StrictHostKeyChecking=no",
-                "-o",
-                "UserKnownHostsFile=/dev/null",
-                "user@localhost"
-            ],
+            openssh_connection1(
+                Port,
+                [
+                    "user@localhost"
+                ]
+            ),
             [{"SSH_AUTH_SOCK", SockPath}]
         )
     end).
+
+openssh_connection1(Port, L) ->
+    [
+        "ssh",
+        "-q",
+        "-N",
+        "-p",
+        integer_to_list(Port),
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null"
+        | L
+    ].
 
 generate_testkeys(Dir) ->
     ok = file:make_dir(Dir),

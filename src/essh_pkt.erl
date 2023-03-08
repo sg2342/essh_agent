@@ -471,11 +471,24 @@ enc_private_key(#'RSAPrivateKey'{
     prime1 = P,
     prime2 = Q
 }) ->
-    L = [N, E, D, IQMP, P, Q],
-    <<?BINARY(<<"ssh-rsa">>), (list_to_binary([mpint(V) || V <- L]))/binary>>;
+    <<
+        ?BINARY(<<"ssh-rsa">>),
+        (mpint(N))/binary,
+        (mpint(E))/binary,
+        (mpint(D))/binary,
+        (mpint(IQMP))/binary,
+        (mpint(P))/binary,
+        (mpint(Q))/binary
+    >>;
 enc_private_key(#'DSAPrivateKey'{p = P, q = Q, g = G, y = Y, x = X}) ->
-    L = [P, Q, G, X, Y],
-    <<?BINARY(<<"ssh-dss">>), (list_to_binary([mpint(V) || V <- L]))/binary>>;
+    <<
+        ?BINARY(<<"ssh-dss">>),
+        (mpint(P))/binary,
+        (mpint(Q))/binary,
+        (mpint(G))/binary,
+        (mpint(X))/binary,
+        (mpint(Y))/binary
+    >>;
 enc_private_key(#'ECPrivateKey'{
     parameters = {'namedCurve', ?'id-Ed25519'},
     'privateKey' = Priv,

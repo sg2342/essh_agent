@@ -47,10 +47,12 @@ end_per_suite(Config0) ->
 
 init_per_testcase(confirm, Config) ->
     {ok, Pid} = essh_agents:start_link([{confirm, fun(_) -> false end}]),
-    F = fun(Req) -> {ok, essh_agents:req(Pid, Req)} end,
-    [{agent, {function, F}}, {agent_pid, Pid} | Config];
+    init_per_testcase1(Pid, Config);
 init_per_testcase(_TC, Config) ->
     {ok, Pid} = essh_agents:start_link(),
+    init_per_testcase1(Pid, Config).
+
+init_per_testcase1(Pid, Config) ->
     F = fun(Req) -> {ok, essh_agents:req(Pid, Req)} end,
     [{agent, {function, F}}, {agent_pid, Pid} | Config].
 
@@ -59,14 +61,13 @@ end_per_testcase(_TC, Config) ->
     Config.
 
 request_identities(Config) ->
-    Agent = ?config(agent, Config),
-    {ok, []} = essh_agentc:request_identities(Agent).
+    [] = agent_ids(Config).
 
 sign_request(Config) ->
     Agent = ?config(agent, Config),
     Key = public_key:generate_key({'namedCurve', ?secp256r1}),
     ok = essh_agentc:add_identity(Agent, Key, <<"comment">>),
-    {ok, [{Pub, <<"comment">>}]} = essh_agentc:request_identities(Agent),
+    [{Pub, <<"comment">>}] = agent_ids(Config),
     {ok, _Signature} = essh_agentc:sign_request(Agent, <<>>, Pub),
     ok = essh_agentc:remove_all_identities(Agent),
     {error, agent_failure} = essh_agentc:sign_request(Agent, <<>>, Pub).
@@ -80,7 +81,7 @@ add_identity(Config) ->
         public_key:generate_key({rsa, 1024, 65537}),
     PublicKey = #'RSAPublicKey'{modulus = N, 'publicExponent' = E},
     ok = essh_agentc:add_identity(Agent, RSAkey, Comment),
-    {ok, [{PublicKey, Comment}]} = essh_agentc:request_identities(Agent),
+    [{PublicKey, Comment}] = agent_ids(Config),
     ok = essh_agentc:add_identity(Agent, dsa_key(Config), Comment).
 
 remove_identity(Config) ->
@@ -91,10 +92,9 @@ remove_identity(Config) ->
     PublicKey = {#'ECPoint'{point = PK}, C},
     {error, agent_failure} = essh_agentc:remove_identity(Agent, PublicKey),
     ok = essh_agentc:add_identity(Agent, Priv, Comment),
-    {ok, [{PublicKey, Comment}]} =
-        essh_agentc:request_identities(Agent),
+    [{PublicKey, Comment}] = agent_ids(Config),
     ok = essh_agentc:remove_identity(Agent, PublicKey),
-    {ok, []} = essh_agentc:request_identities(Agent).
+    [] = agent_ids(Config).
 
 remove_all_identities(Config) ->
     Agent = ?config(agent, Config),
@@ -106,9 +106,9 @@ add_id_constrained(Config) ->
     Comment = <<"comment">>,
     Constraints = [confirm, {lifetime, 1}, {<<"foo">>, <<"bar">>}],
     ok = essh_agentc:add_id_constrained(Agent, Key, Comment, Constraints),
-    {ok, [_ | _]} = essh_agentc:request_identities(Agent),
+    [_ | _] = agent_ids(Config),
     timer:sleep(2000),
-    {ok, []} = essh_agentc:request_identities(Agent).
+    [] = agent_ids(Config).
 
 lock(Config) ->
     Agent = ?config(agent, Config),
@@ -116,16 +116,16 @@ lock(Config) ->
     Comment = <<"comment">>,
     Password = <<"password">>,
     ok = essh_agentc:add_identity(Agent, Key, Comment),
-    {ok, [{Pub, Comment}]} = essh_agentc:request_identities(Agent),
+    [{Pub, Comment}] = agent_ids(Config),
     {error, agent_failure} = essh_agentc:unlock(Agent, Password),
     ok = essh_agentc:lock(Agent, Password),
-    {ok, []} = essh_agentc:request_identities(Agent),
+    [] = agent_ids(Config),
     {error, agent_failure} = essh_agentc:add_identity(Agent, Key, Comment),
     {error, agent_failure} = essh_agentc:remove_identity(Agent, Pub),
     {error, agent_failure} = essh_agentc:lock(Agent, Password),
     {error, agent_failure} = essh_agentc:unlock(Agent, <<"wrong Password">>),
     ok = essh_agentc:unlock(Agent, Password),
-    {ok, [{Pub, Comment}]} = essh_agentc:request_identities(Agent).
+    [{Pub, Comment}] = agent_ids(Config).
 
 certs(Config) ->
     Gens = [
@@ -162,7 +162,7 @@ certs(Config) ->
                 Comment,
                 Constraints
             ),
-            {ok, [{Cert, Comment}]} = essh_agentc:request_identities(Agent),
+            [{Cert, Comment}] = agent_ids(Config),
             {ok, _} = essh_agentc:sign_request(Agent, <<>>, Cert),
             ok = essh_agentc:remove_identity(Agent, Cert)
         end,
@@ -175,10 +175,16 @@ confirm(Config) ->
     Comment = <<"comment">>,
     Constraints = [confirm],
     ok = essh_agentc:add_id_constrained(Agent, Key, Comment, Constraints),
-    {ok, [{Pub, Comment}]} = essh_agentc:request_identities(Agent),
+
+    [{Pub, Comment}] = agent_ids(Config),
     {error, agent_failure} = essh_agentc:sign_request(Agent, <<>>, Pub).
 
 dsa_key(Config) ->
     FN = filename:join(?config(data_dir, Config), "dsa.pem"),
     {ok, PemBin} = file:read_file(FN),
     public_key:pem_entry_decode(hd(public_key:pem_decode(PemBin))).
+
+agent_ids(Config) ->
+    Agent = ?config(agent, Config),
+    {ok, L} = essh_agentc:request_identities(Agent),
+    L.

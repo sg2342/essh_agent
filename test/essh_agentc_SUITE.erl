@@ -66,16 +66,15 @@ end_per_testcase(cover1, Config) -> Config;
 end_per_testcase(_TC, Config) -> tst_util:stop_openssh_agent(Config).
 
 request_identities(Config) ->
-    Agent = {local, ?config(agent_sock_path, Config)},
-    {ok, []} = essh_agentc:request_identities(Agent),
+    [] = agent_ids(Config),
     tst_util:add_openssh_key("id_ed25519", Config),
-    {ok, [{_, _}, {_, _}]} = essh_agentc:request_identities(Agent).
+    [{_, _}, {_, _}] = agent_ids(Config).
 
 sign_request(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
     TBS = <<"TBS">>,
     tst_util:add_openssh_key("ED25519", Config),
-    {ok, [{SignatureKey, _}]} = essh_agentc:request_identities(Agent),
+    [{SignatureKey, _}] = agent_ids(Config),
     {ok, <<11:32, "ssh-ed25519", L:32, Signature:L/binary>>} =
         essh_agentc:sign_request(Agent, TBS, SignatureKey),
     true = public_key:verify(TBS, none, Signature, SignatureKey).
@@ -88,17 +87,17 @@ add_identity(Config) ->
         RSAkey =
         public_key:generate_key({rsa, 1024, 65537}),
     ok = essh_agentc:add_identity(Agent, RSAkey, Comment),
-    {ok, [{#'RSAPublicKey'{modulus = N, 'publicExponent' = E}, Comment}]} =
-        essh_agentc:request_identities(Agent).
+    [{#'RSAPublicKey'{modulus = N, 'publicExponent' = E}, Comment}] =
+        agent_ids(Config).
 
 remove_identity(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
     lists:foreach(
         fun(K) ->
             tst_util:add_openssh_key(K, Config),
-            {ok, [{Key, _Comment}]} = essh_agentc:request_identities(Agent),
+            [{Key, _Comment}] = agent_ids(Config),
             ok = essh_agentc:remove_identity(Agent, Key),
-            {ok, []} = essh_agentc:request_identities(Agent)
+            [] = agent_ids(Config)
         end,
         ["RSA", "DSA", "ECDSA", "ED25519"]
     ).
@@ -107,9 +106,9 @@ remove_all_identities(Config) ->
     tst_util:add_openssh_key("ED25519", Config),
     tst_util:add_openssh_key("ECDSA", Config),
     Agent = {local, ?config(agent_sock_path, Config)},
-    {ok, [_ | _]} = essh_agentc:request_identities(Agent),
+    [_ | _] = agent_ids(Config),
     ok = essh_agentc:remove_all_identities(Agent),
-    {ok, []} = essh_agentc:request_identities(Agent).
+    [] = agent_ids(Config).
 
 add_id_constrained(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
@@ -120,10 +119,9 @@ add_id_constrained(Config) ->
         ECkey =
         public_key:generate_key(C),
     ok = essh_agentc:add_id_constrained(Agent, ECkey, Comment, Constraints),
-    {ok, [{{#'ECPoint'{point = PK}, C}, Comment}]} =
-        essh_agentc:request_identities(Agent),
+    [{{#'ECPoint'{point = PK}, C}, Comment}] = agent_ids(Config),
     timer:sleep(timer:seconds(2)),
-    {ok, []} = essh_agentc:request_identities(Agent).
+    [] = agent_ids(Config).
 
 add_smartcard_key(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
@@ -142,13 +140,13 @@ lock(Config) ->
     Password = <<"password">>,
     tst_util:add_openssh_key("DSA", Config),
     {error, agent_failure} = essh_agentc:unlock(Agent, Password),
-    {ok, [{Key, Comment}]} = essh_agentc:request_identities(Agent),
+    [{Key, Comment}] = agent_ids(Config),
     ok = essh_agentc:lock(Agent, Password),
-    {ok, []} = essh_agentc:request_identities(Agent),
+    [] = agent_ids(Config),
     {error, agent_failure} = essh_agentc:lock(Agent, Password),
     {error, agent_failure} = essh_agentc:unlock(Agent, <<"notthepassword">>),
     ok = essh_agentc:unlock(Agent, Password),
-    {ok, [{Key, Comment}]} = essh_agentc:request_identities(Agent).
+    [{Key, Comment}] = agent_ids(Config).
 
 add_smartcard_key_constrained(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
@@ -164,7 +162,7 @@ add_smartcard_key_constrained(Config) ->
 add_certificate(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
     KeyDir = ?config(key_dir, Config),
-    {ok, []} = essh_agentc:request_identities(Agent),
+    [] = agent_ids(Config),
     tst_util:add_openssh_key("id_ed25519", Config),
     Cert = cert_of_ids(Agent),
     ok = essh_agentc:remove_all_identities(Agent),
@@ -188,20 +186,20 @@ add_certificate(Config) ->
 
 remove_certificate(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
-    {ok, []} = essh_agentc:request_identities(Agent),
+    [] = agent_ids(Config),
     tst_util:add_openssh_key("id_ed25519", Config),
     #{public_key := Pub} = Cert = cert_of_ids(Agent),
     ok = essh_agentc:remove_identity(Agent, Cert),
-    {ok, [{Pub, _}]} = essh_agentc:request_identities(Agent),
+    [{Pub, _}] = agent_ids(Config),
     ok = essh_agentc:remove_identity(Agent, Pub),
-    {ok, []} = essh_agentc:request_identities(Agent).
+    [] = agent_ids(Config).
 
 sign_with_cert(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
     tst_util:add_openssh_key("id_ed25519", Config),
     #{public_key := Pub} = Cert = cert_of_ids(Agent),
     ok = essh_agentc:remove_identity(Agent, Pub),
-    {ok, [{Cert, _}]} = essh_agentc:request_identities(Agent),
+    [{Cert, _}] = agent_ids(Config),
     {ok, _} = essh_agentc:sign_request(Agent, <<>>, Cert).
 
 cover1(_Config) ->
@@ -222,7 +220,7 @@ cover2(Config) ->
     {error, agent_failure} =
         essh_agentc:sign_request(Agent, <<>>, {#'ECPoint'{point = PK}, C}),
     ok = essh_agentc:add_identity(Agent, dsa_key(Config), <<"comment">>),
-    {ok, [{DSApub, _}]} = essh_agentc:request_identities(Agent),
+    [{DSApub, _}] = agent_ids(Config),
     ok = essh_agentc:remove_identity(Agent, DSApub).
 
 dsa_key(Config) ->
@@ -307,3 +305,8 @@ cert_of_ids(Agent) ->
             L
         ),
     Cert.
+
+agent_ids(Config) ->
+    Agent = {local, ?config(agent_sock_path, Config)},
+    {ok, L} = essh_agentc:request_identities(Agent),
+    L.
