@@ -7,10 +7,13 @@
 -include_lib("proper/include/proper.hrl").
 
 prop_mpint() ->
-    ?FORALL(MPINT, gen_mpint(),
-	    begin
-		check(MPINT)
-	    end).
+    ?FORALL(
+        MPINT,
+        gen_mpint(),
+        begin
+            check(MPINT)
+        end
+    ).
 
 check({I, <<ILen:32, I:ILen/big-signed-integer-unit:8>>}) -> true;
 check(_) -> false.

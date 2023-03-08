@@ -39,7 +39,6 @@
 
 %%%  The flag value 1 is reserved for historical implementations.
 
-
 %%%  5.2.  Constraint identifiers
 %%%  The following numbers are used to identify key constraints.  These
 %%%  are only used in key constraints and are not sent as message numbers.
