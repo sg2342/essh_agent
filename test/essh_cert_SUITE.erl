@@ -70,8 +70,8 @@ verify_file(Config) ->
     true = essh_cert:verify(Cert).
 
 key_sign_ed25519(Config) ->
-    C = {namedCurve, ?'id-Ed25519'},
-    #'ECPrivateKey'{publicKey = PK} = SignatureKey = public_key:generate_key(C),
+    C = {'namedCurve', ?'id-Ed25519'},
+    #'ECPrivateKey'{'publicKey' = PK} = SignatureKey = public_key:generate_key(C),
     Request = (request())#{
         public_key => {#'ECPoint'{point = PK}, C},
         cert_type => user
@@ -88,7 +88,7 @@ key_sign_rsa(Config) ->
         SignatureKey =
         public_key:generate_key({rsa, 1024, 65537}),
     Request = (request())#{
-        public_key => #'RSAPublicKey'{modulus = N, publicExponent = E},
+        public_key => #'RSAPublicKey'{modulus = N, 'publicExponent' = E},
         cert_type => host
     },
     Cert = essh_cert:key_sign(Request, SignatureKey),
@@ -98,8 +98,8 @@ key_sign_rsa(Config) ->
     Cert = cert_of_ids(Agent).
 
 key_sign_ecdsa(Config) ->
-    C = {namedCurve, ?secp521r1},
-    #'ECPrivateKey'{publicKey = PK} = SignatureKey = public_key:generate_key(C),
+    C = {'namedCurve', ?secp521r1},
+    #'ECPrivateKey'{'publicKey' = PK} = SignatureKey = public_key:generate_key(C),
     Request = (request())#{
         public_key => {#'ECPoint'{point = PK}, C},
         extensions => [{<<"force-command">>, <<"/usr/bin/id">>}]
@@ -124,8 +124,8 @@ key_sign_dsa(Config) ->
     Cert = cert_of_ids(Agent).
 
 agent_sign(Config) ->
-    C = {namedCurve, ?'id-Ed25519'},
-    #'ECPrivateKey'{publicKey = PK} = SignatureKey = public_key:generate_key(C),
+    C = {'namedCurve', ?'id-Ed25519'},
+    #'ECPrivateKey'{'publicKey' = PK} = SignatureKey = public_key:generate_key(C),
     PublicKey = {#'ECPoint'{point = PK}, C},
     Request = (request())#{public_key => PublicKey},
     Agent = {local, ?config(agent_sock_path, Config)},

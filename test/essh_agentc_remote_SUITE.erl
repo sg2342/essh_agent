@@ -133,7 +133,7 @@ generate_testkeys(Dir) ->
     ).
 
 start_ssh_daemon(Port, Parent) ->
-    Hostkey = public_key:generate_key({namedCurve, ?secp256r1}),
+    Hostkey = public_key:generate_key({'namedCurve', ?secp256r1}),
     Opts = [
         {connectfun, fun(_, _, _) -> Parent ! {new_connection, self()} end},
         {key_cb, {?MODULE, [Hostkey]}}
@@ -212,7 +212,7 @@ cover(_Config) ->
         essh_agentc:sign_request(
             {remote, spawn(F4)},
             <<>>,
-            {#'ECPoint'{point = <<>>}, {namedCurve, ?secp256r1}}
+            {#'ECPoint'{point = <<>>}, {'namedCurve', ?secp256r1}}
         ),
     F5 = fun() ->
         receive

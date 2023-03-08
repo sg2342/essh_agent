@@ -64,7 +64,7 @@ request_identities(Config) ->
 
 sign_request(Config) ->
     Agent = ?config(agent, Config),
-    Key = public_key:generate_key({namedCurve, ?secp256r1}),
+    Key = public_key:generate_key({'namedCurve', ?secp256r1}),
     ok = essh_agentc:add_identity(Agent, Key, <<"comment">>),
     {ok, [{Pub, <<"comment">>}]} = essh_agentc:request_identities(Agent),
     {ok, _Signature} = essh_agentc:sign_request(Agent, <<>>, Pub),
@@ -78,16 +78,16 @@ add_identity(Config) ->
     #'RSAPrivateKey'{modulus = N} =
         RSAkey =
         public_key:generate_key({rsa, 1024, 65537}),
-    PublicKey = #'RSAPublicKey'{modulus = N, publicExponent = E},
+    PublicKey = #'RSAPublicKey'{modulus = N, 'publicExponent' = E},
     ok = essh_agentc:add_identity(Agent, RSAkey, Comment),
     {ok, [{PublicKey, Comment}]} = essh_agentc:request_identities(Agent),
     ok = essh_agentc:add_identity(Agent, dsa_key(Config), Comment).
 
 remove_identity(Config) ->
     Agent = ?config(agent, Config),
-    C = {namedCurve, ?'id-Ed25519'},
+    C = {'namedCurve', ?'id-Ed25519'},
     Comment = <<"comment">>,
-    #'ECPrivateKey'{publicKey = PK} = Priv = public_key:generate_key(C),
+    #'ECPrivateKey'{'publicKey' = PK} = Priv = public_key:generate_key(C),
     PublicKey = {#'ECPoint'{point = PK}, C},
     {error, agent_failure} = essh_agentc:remove_identity(Agent, PublicKey),
     ok = essh_agentc:add_identity(Agent, Priv, Comment),
@@ -102,7 +102,7 @@ remove_all_identities(Config) ->
 
 add_id_constrained(Config) ->
     Agent = ?config(agent, Config),
-    Key = public_key:generate_key({namedCurve, ?secp384r1}),
+    Key = public_key:generate_key({'namedCurve', ?secp384r1}),
     Comment = <<"comment">>,
     Constraints = [confirm, {lifetime, 1}, {<<"foo">>, <<"bar">>}],
     ok = essh_agentc:add_id_constrained(Agent, Key, Comment, Constraints),
@@ -112,7 +112,7 @@ add_id_constrained(Config) ->
 
 lock(Config) ->
     Agent = ?config(agent, Config),
-    Key = public_key:generate_key({namedCurve, ?secp521r1}),
+    Key = public_key:generate_key({'namedCurve', ?secp521r1}),
     Comment = <<"comment">>,
     Password = <<"password">>,
     ok = essh_agentc:add_identity(Agent, Key, Comment),
@@ -130,10 +130,10 @@ lock(Config) ->
 certs(Config) ->
     Gens = [
         {rsa, 1024, 65537},
-        {namedCurve, ?'id-Ed25519'},
-        {namedCurve, ?secp256r1},
-        {namedCurve, ?secp384r1},
-        {namedCurve, ?secp521r1}
+        {'namedCurve', ?'id-Ed25519'},
+        {'namedCurve', ?secp256r1},
+        {'namedCurve', ?secp384r1},
+        {'namedCurve', ?secp521r1}
     ],
     PrivKeys = [dsa_key(Config) | [public_key:generate_key(V) || V <- Gens]],
     PubKeys = [essh_pkt:pubkey(V) || V <- PrivKeys],
@@ -171,7 +171,7 @@ certs(Config) ->
 
 confirm(Config) ->
     Agent = ?config(agent, Config),
-    Key = public_key:generate_key({namedCurve, ?'id-Ed25519'}),
+    Key = public_key:generate_key({'namedCurve', ?'id-Ed25519'}),
     Comment = <<"comment">>,
     Constraints = [confirm],
     ok = essh_agentc:add_id_constrained(Agent, Key, Comment, Constraints),

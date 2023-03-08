@@ -85,7 +85,7 @@ key_sign1(TBS, DigestType, #'DSAPrivateKey'{} = Key) ->
     DER = public_key:sign(TBS, DigestType, Key),
     #'Dss-Sig-Value'{r = R, s = S} = public_key:der_decode('Dss-Sig-Value', DER),
     <<R:160/big-unsigned-integer, S:160/big-unsigned-integer>>;
-key_sign1(TBS, DigestType, #'ECPrivateKey'{parameters = {namedCurve, C}} = Key) when
+key_sign1(TBS, DigestType, #'ECPrivateKey'{parameters = {'namedCurve', C}} = Key) when
     C == ?secp256r1; C == ?secp384r1; C == ?secp521r1
 ->
     DER = public_key:sign(TBS, DigestType, Key),
@@ -117,9 +117,9 @@ signinfo(#'RSAPublicKey'{}) ->
     <<"rsa-sha2-256">>;
 signinfo({_, #'Dss-Parms'{}}) ->
     <<"ssh-dss">>;
-signinfo({#'ECPoint'{}, {namedCurve, ?'id-Ed25519'}}) ->
+signinfo({#'ECPoint'{}, {'namedCurve', ?'id-Ed25519'}}) ->
     <<"ssh-ed25519">>;
-signinfo({#'ECPoint'{}, {namedCurve, Oid}}) ->
+signinfo({#'ECPoint'{}, {'namedCurve', Oid}}) ->
     <<"ecdsa-sha2-", (essh_pkt:oid2curvename(Oid))/binary>>.
 
 -spec digest_type(binary()) -> none | sha | sha256 | sha384 | sha512.

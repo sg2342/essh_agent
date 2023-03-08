@@ -88,7 +88,7 @@ add_identity(Config) ->
         RSAkey =
         public_key:generate_key({rsa, 1024, 65537}),
     ok = essh_agentc:add_identity(Agent, RSAkey, Comment),
-    {ok, [{#'RSAPublicKey'{modulus = N, publicExponent = E}, Comment}]} =
+    {ok, [{#'RSAPublicKey'{modulus = N, 'publicExponent' = E}, Comment}]} =
         essh_agentc:request_identities(Agent).
 
 remove_identity(Config) ->
@@ -115,8 +115,8 @@ add_id_constrained(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
     Comment = <<"comment">>,
     Constraints = [confirm, {lifetime, 1}],
-    C = {namedCurve, ?secp521r1},
-    #'ECPrivateKey'{publicKey = PK} =
+    C = {'namedCurve', ?secp521r1},
+    #'ECPrivateKey'{'publicKey' = PK} =
         ECkey =
         public_key:generate_key(C),
     ok = essh_agentc:add_id_constrained(Agent, ECkey, Comment, Constraints),
@@ -175,9 +175,9 @@ add_certificate(Config) ->
                 K;
             [{{ed_pri, ed25519, Pub, Priv}, _}, _] ->
                 #'ECPrivateKey'{
-                    privateKey = Priv,
-                    publicKey = Pub,
-                    parameters = {namedCurve, ?'id-Ed25519'}
+                    'privateKey' = Priv,
+                    'publicKey' = Pub,
+                    parameters = {'namedCurve', ?'id-Ed25519'}
                 }
         end,
     ok = essh_agentc:add_identity(Agent, Key, Cert, <<>>),
@@ -208,16 +208,16 @@ cover1(_Config) ->
     NoAgent = {local, "/this/path/does/not/exist/fsj"},
     {error, enoent} = essh_agentc:request_identities(NoAgent),
     {error, enoent} = essh_agentc:lock(NoAgent, <<>>),
-    C = {namedCurve, ?secp521r1},
-    #'ECPrivateKey'{publicKey = PK} =
+    C = {'namedCurve', ?secp521r1},
+    #'ECPrivateKey'{'publicKey' = PK} =
         public_key:generate_key(C),
     {error, enoent} =
         essh_agentc:sign_request(NoAgent, <<>>, {#'ECPoint'{point = PK}, C}).
 
 cover2(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
-    C = {namedCurve, ?secp521r1},
-    #'ECPrivateKey'{publicKey = PK} =
+    C = {'namedCurve', ?secp521r1},
+    #'ECPrivateKey'{'publicKey' = PK} =
         public_key:generate_key(C),
     {error, agent_failure} =
         essh_agentc:sign_request(Agent, <<>>, {#'ECPoint'{point = PK}, C}),

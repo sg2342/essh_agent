@@ -17,7 +17,7 @@
 -type essh_private_key() :: essh_pkt:essh_private_key().
 
 -record(t, {
-    pubOrCert :: essh_public_key() | essh_certificate(),
+    'pubOrCert' :: essh_public_key() | essh_certificate(),
     priv :: essh_private_key(),
     comment :: binary(),
     confirm :: boolean(),
@@ -36,7 +36,7 @@ init(Opts) ->
             F when is_function(F) -> F;
             _ -> fun(_) -> true end
         end,
-    Tab = ets:new(?MODULE, [{keypos, #t.pubOrCert}, private]),
+    Tab = ets:new(?MODULE, [{keypos, #t.'pubOrCert'}, private]),
     {ok, unlocked, #{tab => Tab, confirm_fun => Confirm}}.
 
 callback_mode() -> handle_event_function.
@@ -69,7 +69,7 @@ req1(Pid, <<?BYTE(?SSH_AGENTC_ADD_IDENTITY), Req/binary>>) ->
         gen_statem:call(
             Pid,
             {add, #t{
-                pubOrCert = PubOrCert,
+                'pubOrCert' = PubOrCert,
                 priv = Priv,
                 comment = Comment,
                 confirm = false,
@@ -94,7 +94,7 @@ req1(Pid, <<?BYTE(?SSH_AGENTC_ADD_ID_CONSTRAINED), Req/binary>>) ->
         gen_statem:call(
             Pid,
             {add, #t{
-                pubOrCert = PubOrCert,
+                'pubOrCert' = PubOrCert,
                 priv = Priv,
                 comment = Comment,
                 confirm = Confirm,
@@ -114,7 +114,7 @@ handle_event({call, From}, list, locked, _) ->
     {keep_state_and_data, [{reply, From, {ok, []}}]};
 handle_event({call, From}, list, unlocked, #{tab := Tab}) ->
     expire(Tab),
-    L = [{Id, C} || #t{pubOrCert = Id, comment = C} <- ets:tab2list(Tab)],
+    L = [{Id, C} || #t{'pubOrCert' = Id, comment = C} <- ets:tab2list(Tab)],
     {keep_state_and_data, [{reply, From, {ok, L}}]};
 handle_event({call, From}, {add, Id}, unlocked, #{tab := Tab}) ->
     ets:insert(Tab, Id),
@@ -172,7 +172,7 @@ signinfo_digetstype(Pub) ->
 do_sign([], _, _) ->
     {error, no_matching_key};
 do_sign(
-    [#t{pubOrCert = PubOrCert, confirm = true, comment = Comment} = Id],
+    [#t{'pubOrCert' = PubOrCert, confirm = true, comment = Comment} = Id],
     TBS,
     ConfirmFun
 ) ->
@@ -183,6 +183,6 @@ do_sign(
 do_sign([#t{confirm = false} = Id], TBS, _) ->
     do_sign1(Id, TBS).
 
-do_sign1(#t{pubOrCert = PubOrCert, priv = Priv}, TBS) ->
+do_sign1(#t{'pubOrCert' = PubOrCert, priv = Priv}, TBS) ->
     {SignInfo, DigestType} = signinfo_digetstype(PubOrCert),
     {ok, {SignInfo, essh_cert:key_sign1(TBS, DigestType, Priv)}}.

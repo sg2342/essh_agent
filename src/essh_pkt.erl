@@ -124,8 +124,8 @@ dec_add_id(<<
 ->
     Key = #'RSAPrivateKey'{
         modulus = N,
-        publicExponent = E,
-        privateExponent = D,
+        'publicExponent' = E,
+        'privateExponent' = D,
         coefficient = IQMP,
         prime1 = P,
         prime2 = Q
@@ -156,9 +156,9 @@ dec_add_id(<<
 ->
     <<Priv:(PrivPubLen - PKLen)/binary, PK:PKLen/binary>> = PrivPub,
     Key = #'ECPrivateKey'{
-        parameters = {namedCurve, ?'id-Ed25519'},
-        privateKey = Priv,
-        publicKey = PK
+        parameters = {'namedCurve', ?'id-Ed25519'},
+        'privateKey' = Priv,
+        'publicKey' = PK
     },
     {pubkey(Key), Key, Comment, dec_constraints(Constraints)};
 dec_add_id(<<
@@ -174,16 +174,16 @@ dec_add_id(<<
     (TypeInfo == <<"ecdsa-sha2-nistp521">>) andalso (C == <<"nistp521">>)
 ->
     Key = #'ECPrivateKey'{
-        parameters = {namedCurve, curvename2oid(C)},
-        privateKey = Priv,
-        publicKey = Pub
+        parameters = {'namedCurve', curvename2oid(C)},
+        'privateKey' = Priv,
+        'publicKey' = Pub
     },
     {pubkey(Key), Key, Comment, dec_constraints(Constraints)}.
 
 dec_add_id_c(
     #{
         type_info := TypeInfo,
-        public_key := {#'ECPoint'{point = PK}, {namedCurve, ?'id-Ed25519'} = Curve}
+        public_key := {#'ECPoint'{point = PK}, {'namedCurve', ?'id-Ed25519'} = Curve}
     } = Cert,
     TypeInfo,
     <<
@@ -194,19 +194,19 @@ dec_add_id_c(
     >>
 ) ->
     <<Priv:(PrivPubLen - PKLen)/binary, PK:PKLen/binary>> = PrivPub,
-    Key = #'ECPrivateKey'{parameters = Curve, privateKey = Priv, publicKey = PK},
+    Key = #'ECPrivateKey'{parameters = Curve, 'privateKey' = Priv, 'publicKey' = PK},
     {Cert, Key, Comment, dec_constraints(Constraints)};
 dec_add_id_c(
     #{
         type_info := TypeInfo,
-        public_key := {#'ECPoint'{point = PK}, {namedCurve, Oid} = Curve}
+        public_key := {#'ECPoint'{point = PK}, {'namedCurve', Oid} = Curve}
     } = Cert,
     TypeInfo,
     <<?BINARY(Priv, _PrivLen), ?BINARY(Comment, _CommentLen), Constraints/binary>>
 ) when
     Oid == ?secp256r1; Oid == ?secp384r1; Oid == ?secp521r1
 ->
-    Key = #'ECPrivateKey'{parameters = Curve, privateKey = Priv, publicKey = PK},
+    Key = #'ECPrivateKey'{parameters = Curve, 'privateKey' = Priv, 'publicKey' = PK},
     {Cert, Key, Comment, dec_constraints(Constraints)};
 dec_add_id_c(
     #{
@@ -223,7 +223,7 @@ dec_add_id_c(
         type_info := TypeInfo,
         public_key := #'RSAPublicKey'{
             modulus = N,
-            publicExponent = E
+            'publicExponent' = E
         }
     } = Cert,
     TypeInfo,
@@ -239,8 +239,8 @@ dec_add_id_c(
     Key = #'RSAPrivateKey'{
         version = 'two-prime',
         modulus = N,
-        publicExponent = E,
-        privateExponent = D,
+        'publicExponent' = E,
+        'privateExponent' = D,
         coefficient = IQMP,
         prime1 = P,
         prime2 = Q
@@ -292,7 +292,7 @@ dec_cert(<<
     M#{
         type_info => TypeInfo,
         nonce => Nonce,
-        public_key => {#'ECPoint'{point = PK}, {namedCurve, ?'id-Ed25519'}}
+        public_key => {#'ECPoint'{point = PK}, {'namedCurve', ?'id-Ed25519'}}
     };
 dec_cert(<<
     ?BINARY(TypeInfo, _TypeInfoLen),
@@ -309,7 +309,7 @@ dec_cert(<<
     M#{
         type_info => TypeInfo,
         nonce => Nonce,
-        public_key => #'RSAPublicKey'{modulus = N, publicExponent = E}
+        public_key => #'RSAPublicKey'{modulus = N, 'publicExponent' = E}
     };
 dec_cert(<<
     ?BINARY(TypeInfo, _TypeInfoLen),
@@ -343,7 +343,7 @@ dec_cert(<<
     M#{
         type_info => TypeInfo,
         nonce => Nonce,
-        public_key => {#'ECPoint'{point = PK}, {namedCurve, curvename2oid(Curve)}}
+        public_key => {#'ECPoint'{point = PK}, {'namedCurve', curvename2oid(Curve)}}
     }.
 
 dec_cert_common(<<
@@ -410,7 +410,7 @@ enc_tbs(#{
 dec_signature_key(<<?BINARY(SigKInfo, _SigKInfoLen), ?MPINT(E, _ELen), ?MPINT(N, _NLen)>>) when
     SigKInfo == <<"ssh-rsa">>
 ->
-    #'RSAPublicKey'{modulus = N, publicExponent = E};
+    #'RSAPublicKey'{modulus = N, 'publicExponent' = E};
 dec_signature_key(<<
     ?BINARY(SigKInfo, _SigKInfoLen),
     ?MPINT(P, _PLen),
@@ -424,7 +424,7 @@ dec_signature_key(<<
 dec_signature_key(<<?BINARY(SigKInfo, _SigKInfoLen), ?BINARY(PK, _PKLen)>>) when
     SigKInfo == <<"ssh-ed25519">>
 ->
-    {#'ECPoint'{point = PK}, {namedCurve, ?'id-Ed25519'}};
+    {#'ECPoint'{point = PK}, {'namedCurve', ?'id-Ed25519'}};
 dec_signature_key(<<
     ?BINARY(SigKInfo, _SigKInfoLen), ?BINARY(Curve, _CurveLen), ?BINARY(PK, _PKLen)
 >>) when
@@ -432,7 +432,7 @@ dec_signature_key(<<
     SigKInfo == <<"ecdsa-sha2-nistp384">>;
     SigKInfo == <<"ecdsa-sha2-nistp521">>
 ->
-    {#'ECPoint'{point = PK}, {namedCurve, curvename2oid(Curve)}}.
+    {#'ECPoint'{point = PK}, {'namedCurve', curvename2oid(Curve)}}.
 
 -spec enc_signature_key(essh_public_key()) -> binary().
 enc_signature_key(SignatureKey) ->
@@ -440,21 +440,21 @@ enc_signature_key(SignatureKey) ->
 
 -spec enc_private_key_cert(essh_private_key()) -> binary().
 enc_private_key_cert(#'ECPrivateKey'{
-    parameters = {namedCurve, ?'id-Ed25519'},
-    privateKey = Priv,
-    publicKey = Pub
+    parameters = {'namedCurve', ?'id-Ed25519'},
+    'privateKey' = Priv,
+    'publicKey' = Pub
 }) ->
     <<?BINARY(Pub), ?BINARY(<<Priv/binary, Pub/binary>>)>>;
 enc_private_key_cert(#'RSAPrivateKey'{
-    privateExponent = D,
+    'privateExponent' = D,
     coefficient = IQMP,
     prime1 = P,
     prime2 = Q
 }) ->
     list_to_binary([mpint(V) || V <- [D, IQMP, P, Q]]);
 enc_private_key_cert(#'ECPrivateKey'{
-    parameters = {namedCurve, Oid},
-    privateKey = Priv
+    parameters = {'namedCurve', Oid},
+    'privateKey' = Priv
 }) when
     Oid == ?secp256r1; Oid == ?secp384r1; Oid == ?secp521r1
 ->
@@ -465,8 +465,8 @@ enc_private_key_cert(#'DSAPrivateKey'{x = X}) ->
 -spec enc_private_key(essh_private_key()) -> binary().
 enc_private_key(#'RSAPrivateKey'{
     modulus = N,
-    publicExponent = E,
-    privateExponent = D,
+    'publicExponent' = E,
+    'privateExponent' = D,
     coefficient = IQMP,
     prime1 = P,
     prime2 = Q
@@ -477,28 +477,28 @@ enc_private_key(#'DSAPrivateKey'{p = P, q = Q, g = G, y = Y, x = X}) ->
     L = [P, Q, G, X, Y],
     <<?BINARY(<<"ssh-dss">>), (list_to_binary([mpint(V) || V <- L]))/binary>>;
 enc_private_key(#'ECPrivateKey'{
-    parameters = {namedCurve, ?'id-Ed25519'},
-    privateKey = Priv,
-    publicKey = Pub
+    parameters = {'namedCurve', ?'id-Ed25519'},
+    'privateKey' = Priv,
+    'publicKey' = Pub
 }) ->
     <<?BINARY(<<"ssh-ed25519">>), ?BINARY(Pub), ?BINARY(<<Priv/binary, Pub/binary>>)>>;
 enc_private_key(#'ECPrivateKey'{
-    parameters = {namedCurve, Oid},
-    privateKey = Priv,
-    publicKey = Pub
+    parameters = {'namedCurve', Oid},
+    'privateKey' = Priv,
+    'publicKey' = Pub
 }) when
     Oid == ?secp256r1; Oid == ?secp384r1; Oid == ?secp521r1
 ->
     C = oid2curvename(Oid),
     <<?BINARY(<<"ecdsa-sha2-", C/binary>>), ?BINARY(C), ?BINARY(Pub), ?BINARY(Priv)>>.
 
-enc_pubkey(#'RSAPublicKey'{modulus = N, publicExponent = E}) ->
+enc_pubkey(#'RSAPublicKey'{modulus = N, 'publicExponent' = E}) ->
     list_to_binary([mpint(E), mpint(N)]);
 enc_pubkey({Y, #'Dss-Parms'{p = P, q = Q, g = G}}) ->
     list_to_binary([mpint(P), mpint(Q), mpint(G), mpint(Y)]);
-enc_pubkey({#'ECPoint'{point = PK}, {namedCurve, ?'id-Ed25519'}}) ->
+enc_pubkey({#'ECPoint'{point = PK}, {'namedCurve', ?'id-Ed25519'}}) ->
     <<?BINARY(PK)>>;
-enc_pubkey({#'ECPoint'{point = PK}, {namedCurve, Oid}}) ->
+enc_pubkey({#'ECPoint'{point = PK}, {'namedCurve', Oid}}) ->
     <<?BINARY((oid2curvename(Oid))), ?BINARY(PK)>>.
 
 curvename2oid(<<"nistp256">>) -> ?secp256r1;
@@ -513,15 +513,15 @@ oid2curvename(?secp521r1) -> <<"nistp521">>.
 -spec key_type(essh_public_key()) -> binary().
 key_type(#'RSAPublicKey'{}) -> <<"ssh-rsa">>;
 key_type({_, #'Dss-Parms'{}}) -> <<"ssh-dss">>;
-key_type({#'ECPoint'{}, {namedCurve, ?'id-Ed25519'}}) -> <<"ssh-ed25519">>;
-key_type({#'ECPoint'{}, {namedCurve, Oid}}) -> <<"ecdsa-sha2-", (oid2curvename(Oid))/binary>>.
+key_type({#'ECPoint'{}, {'namedCurve', ?'id-Ed25519'}}) -> <<"ssh-ed25519">>;
+key_type({#'ECPoint'{}, {'namedCurve', Oid}}) -> <<"ecdsa-sha2-", (oid2curvename(Oid))/binary>>.
 
 -spec pubkey(essh_private_key()) -> essh_public_key().
-pubkey(#'RSAPrivateKey'{publicExponent = E, modulus = N}) ->
-    #'RSAPublicKey'{publicExponent = E, modulus = N};
+pubkey(#'RSAPrivateKey'{'publicExponent' = E, modulus = N}) ->
+    #'RSAPublicKey'{'publicExponent' = E, modulus = N};
 pubkey(#'DSAPrivateKey'{p = P, q = Q, g = G, y = Y}) ->
     {Y, #'Dss-Parms'{p = P, q = Q, g = G}};
-pubkey(#'ECPrivateKey'{parameters = C, publicKey = Q}) ->
+pubkey(#'ECPrivateKey'{parameters = C, 'publicKey' = Q}) ->
     {#'ECPoint'{point = Q}, C}.
 
 enc_cert_type(user) -> <<?UINT32(1)>>;
