@@ -1,12 +1,10 @@
 -module(prop_mpint).
 
--export([prop_mpint/0]).
+-export([prop_enc/0]).
 
 -include_lib("common_test/include/ct_property_test.hrl").
 
--include_lib("proper/include/proper.hrl").
-
-prop_mpint() ->
+prop_enc() ->
     ?FORALL(
         MPINT,
         gen_mpint(),
