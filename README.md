@@ -1,5 +1,6 @@
 essh_agent
 =====
+[![Build Status](https://github.com/sg2342/essh_agent/workflows/Common%20Test/badge.svg)](https://github.com/sg2342/essh_agent/actions?query=branch%3Amain+workflow%3A"Common+Test")
 
  * SSH authentication agent implementation: [essh_agents.erl](src/essh_agents.erl)
  
