@@ -297,7 +297,7 @@ dec_cert(<<
 dec_cert(<<
     ?BINARY(TypeInfo, _TypeInfoLen),
     ?BINARY(Nonce, _NonceLen),
-    ?MPINT(E, _Elen),
+    ?MPINT(E, _ELen),
     ?MPINT(N, _NLen),
     Rest/binary
 >>) when
