@@ -23,4 +23,4 @@ Build essh_agent escript
 Test
 ----
 
-    $ rebar3 as test do fmt,lint,dialyzer,xref,ct,cover
+    $ ERL_AFLAGS="-enable-feature maybe_expr" rebar3 as test check
