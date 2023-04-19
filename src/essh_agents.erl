@@ -12,13 +12,9 @@
 
 -include_lib("stdlib/include/ms_transform.hrl").
 
--type essh_certificate() :: essh_pkt:essh_certificate().
--type essh_public_key() :: essh_pkt:essh_public_key().
--type essh_private_key() :: essh_pkt:essh_private_key().
-
 -record(t, {
-    'pubOrCert' :: essh_public_key() | essh_certificate(),
-    priv :: essh_private_key(),
+    'pubOrCert' :: essh_pkt:essh_pub_or_cert(),
+    priv :: public_key:private_key(),
     comment :: binary(),
     confirm :: boolean(),
     expire :: non_neg_integer() | undefined

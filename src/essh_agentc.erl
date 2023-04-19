@@ -28,7 +28,7 @@
 -export_type([essh_agent/0]).
 
 -spec request_identities(essh_agent()) ->
-    {ok, [{essh_pkt:essh_public_key() | essh_pkt:essh_certificate(), Comment :: binary()}]}
+    {ok, [{essh_pkt:essh_pub_or_cert(), Comment :: binary()}]}
     | {error, Reason :: term()}.
 request_identities(Agent) ->
     Req = <<?BYTE(?SSH_AGENTC_REQUEST_IDENTITIES)>>,
@@ -69,7 +69,7 @@ request_identities4({K, C}) ->
 -spec sign_request(
     essh_agent(),
     TBS :: binary(),
-    essh_pkt:essh_public_key() | essh_pkt:essh_certificate()
+    essh_pkt:essh_pub_or_cert()
 ) ->
     {ok, Signature :: binary()} | {error, Reason :: term()}.
 sign_request(Agent, TBS, #{type_info := _} = Cert) ->
@@ -94,7 +94,7 @@ sign_request1({ok, _}) ->
 
 -spec add_identity(
     essh_agent(),
-    essh_pkt:essh_private_key(),
+    public_key:private_key(),
     essh_pkt:essh_certificate(),
     Comment :: binary()
 ) ->
@@ -110,7 +110,7 @@ add_identity(Agent, PrivateKey, #{type_info := TypeInfo} = Cert, Comment) ->
     >>,
     simple_req(Agent, Req).
 
--spec add_identity(essh_agent(), essh_pkt:essh_private_key(), Comment :: binary()) ->
+-spec add_identity(essh_agent(), public_key:private_key(), Comment :: binary()) ->
     ok | {error, Reason :: term()}.
 add_identity(Agent, PrivateKey, Comment) ->
     Req = <<
@@ -120,7 +120,7 @@ add_identity(Agent, PrivateKey, Comment) ->
     >>,
     simple_req(Agent, Req).
 
--spec remove_identity(essh_agent(), essh_pkt:essh_public_key() | essh_pkt:essh_certificate()) ->
+-spec remove_identity(essh_agent(), essh_pkt:essh_pub_or_cert()) ->
     ok | {error, Reason :: term()}.
 remove_identity(Agent, #{type_info := _} = Cert) ->
     CertBlob = essh_pkt:enc_cert(Cert),
@@ -137,7 +137,7 @@ remove_all_identities(Agent) ->
 
 -spec add_id_constrained(
     essh_agent(),
-    essh_pkt:essh_private_key(),
+    public_key:private_key(),
     essh_pkt:essh_certificate(),
     Comment :: binary(),
     [essh_pkt:essh_constraint()]
@@ -163,7 +163,7 @@ add_id_constrained(
 
 -spec add_id_constrained(
     essh_agent(),
-    essh_pkt:essh_private_key(),
+    public_key:private_key(),
     Comment :: binary(),
     [essh_pkt:essh_constraint()]
 ) ->

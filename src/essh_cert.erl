@@ -9,7 +9,7 @@
 
 -type essh_sign_request() ::
     #{
-        public_key := essh_pkt:essh_public_key(),
+        public_key := public_key:public_key(),
         serial := 0..18446744073709551615,
         cert_type := host | user,
         key_id := binary(),
@@ -55,7 +55,7 @@ verify1(TBS, DigestType, Signature, Key) ->
 
 -define(NONCE_LEN, 32).
 
--spec key_sign(essh_sign_request(), essh_pkt:essh_private_key()) -> essh_pkt:essh_certificate().
+-spec key_sign(essh_sign_request(), public_key:private_key()) -> essh_pkt:essh_certificate().
 key_sign(#{public_key := PublicKey} = Request, Key) ->
     SignatureKey = essh_pkt:pubkey(Key),
     SignInfo = signinfo(SignatureKey),
@@ -73,7 +73,7 @@ key_sign(#{public_key := PublicKey} = Request, Key) ->
 -spec key_sign1(
     binary(),
     none | sha | sha256 | sha384 | sha512,
-    essh_pkt:essh_public_key()
+    public_key:private_key()
 ) -> binary().
 key_sign1(TBS, DigestType, #'DSAPrivateKey'{} = Key) ->
     DER = public_key:sign(TBS, DigestType, Key),
@@ -88,7 +88,7 @@ key_sign1(TBS, DigestType, #'ECPrivateKey'{parameters = {'namedCurve', C}} = Key
 key_sign1(TBS, DigestType, Key) ->
     public_key:sign(TBS, DigestType, Key).
 
--spec agent_sign(essh_sign_request(), essh_agentc:essh_agent(), essh_pkt:essh_public_key()) ->
+-spec agent_sign(essh_sign_request(), essh_agentc:essh_agent(), public_key:public_key()) ->
     {ok, essh_pkt:essh_certificate()} | {error, Reason :: term()}.
 agent_sign(#{public_key := PublicKey} = Request, Agent, SignatureKey) ->
     TypeInfo = <<(essh_pkt:key_type(PublicKey))/binary, "-cert-v01@openssh.com">>,
@@ -106,7 +106,7 @@ agent_sign1({ok, <<?BINARY(I, _ILen), ?BINARY(S, _SLen)>>}, Cert) ->
 agent_sign1({error, _} = E, _) ->
     E.
 
--spec signinfo(essh_pkt:essh_public_key()) -> binary().
+-spec signinfo(public_key:public_key()) -> binary().
 signinfo(#'RSAPublicKey'{}) ->
     <<"rsa-sha2-256">>;
 signinfo({_, #'Dss-Parms'{}}) ->
