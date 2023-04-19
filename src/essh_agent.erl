@@ -118,7 +118,10 @@ confirm({CertOrPub, Comment}) ->
 fingerprint(#{public_key := Pub}) -> fingerprint(Pub);
 fingerprint(Pub) -> ssh:hostkey_fingerprint(sha256, Pub).
 
--spec spwn(Args :: [string()], Env :: [{string(), string()}]) ->
+-spec spwn(
+    Args :: [string() | binary()],
+    Env :: [{os:env_var_name(), os:env_var_value() | false}]
+) ->
     {ExitCode :: integer(), string()}.
 spwn([Arg0 | Args], Env) ->
     Opts = [stream, in, eof, hide, exit_status, {arg0, Arg0}, {args, Args}, {env, Env}],

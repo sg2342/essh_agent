@@ -19,23 +19,11 @@
 -include("essh_agent_constants.hrl").
 -include("essh_binary.hrl").
 
--type essh_public_key() ::
-    public_key:rsa_public_key()
-    | public_key:dsa_public_key()
-    | public_key:ec_public_key()
-    | public_key:ed_public_key().
-
--type essh_private_key() ::
-    public_key:rsa_private_key()
-    | public_key:dsa_private_key()
-    | public_key:ec_private_key()
-    | public_key:ed_private_key().
-
 -type essh_certificate() ::
     #{
         type_info := binary(),
         nonce := binary(),
-        public_key := essh_public_key(),
+        public_key := public_key:public_key(),
         serial := 0..18446744073709551615,
         cert_type := host | user,
         key_id := binary(),
@@ -45,8 +33,25 @@
         critical_options := [{binary(), binary()}],
         extensions := [{binary(), binary()}],
         reserved := binary(),
-        signature_key := essh_public_key(),
+        signature_key := public_key:public_key(),
         signature := {binary(), binary()}
+    }.
+
+-type essh_tbs() ::
+    #{
+        type_info := binary(),
+        nonce := binary(),
+        public_key := public_key:public_key(),
+        serial := 0..18446744073709551615,
+        cert_type := host | user,
+        key_id := binary(),
+        valid_principals := [binary()],
+        valid_before := 0..18446744073709551615,
+        valid_after := 0..18446744073709551615,
+        critical_options := [{binary(), binary()}],
+        extensions := [{binary(), binary()}],
+        reserved := binary(),
+        signature_key := public_key:public_key()
     }.
 
 -type essh_constraint() ::
@@ -54,14 +59,16 @@
     | {lifetime, Seconds :: pos_integer()}
     | Extension :: {Name :: binary(), Value :: binary()}.
 
+-type essh_pub_or_cert() :: essh_certificate() | public_key:public_key().
+
 -export_type([
-    essh_public_key/0,
-    essh_private_key/0,
     essh_certificate/0,
+    essh_tbs/0,
+    essh_pub_or_cert/0,
     essh_constraint/0
 ]).
 
--spec enc_identities_answer([{essh_certificate() | essh_public_key(), Comment :: binary()}]) ->
+-spec enc_identities_answer([{essh_pub_or_cert(), Comment :: binary()}]) ->
     binary().
 enc_identities_answer(L) ->
     list_to_binary(
@@ -79,7 +86,7 @@ enc_identities_answer(L) ->
         ]
     ).
 
--spec dec_key_or_cert(binary()) -> essh_public_key() | essh_certificate().
+-spec dec_key_or_cert(binary()) -> essh_pub_or_cert().
 dec_key_or_cert(<<?BINARY(TypeInfo, _TypeInfoLen), _/binary>> = Bin) when
     TypeInfo == <<"ssh-ed25519-cert-v01@openssh.com">>;
     TypeInfo == <<"ssh-rsa-cert-v01@openssh.com">>;
@@ -95,7 +102,7 @@ dec_key_or_cert(Bin) ->
     dec_signature_key(Bin).
 
 -spec dec_add_id(binary()) ->
-    {essh_certificate() | essh_public_key(), essh_private_key(), Comment :: binary(), [
+    {essh_pub_or_cert(), public_key:private_key(), Comment :: binary(), [
         essh_constraint()
     ]}.
 dec_add_id(<<?BINARY(TypeInfo, _TypeInfoLen), ?BINARY(CertBlob, _CertBlobLen), Rest/binary>>) when
@@ -374,7 +381,7 @@ dec_cert_common(<<
         signature => {SignInfo, Signature}
     }.
 
--spec enc_tbs(essh_certificate()) -> binary().
+-spec enc_tbs(essh_tbs() | essh_certificate()) -> binary().
 enc_tbs(#{
     type_info := TypeInfo,
     nonce := Nonce,
@@ -406,7 +413,7 @@ enc_tbs(#{
         ?BINARY((enc_signature_key(SignatureKey)))
     >>.
 
--spec dec_signature_key(binary()) -> essh_public_key().
+-spec dec_signature_key(binary()) -> public_key:public_key().
 dec_signature_key(<<?BINARY(SigKInfo, _SigKInfoLen), ?MPINT(E, _ELen), ?MPINT(N, _NLen)>>) when
     SigKInfo == <<"ssh-rsa">>
 ->
@@ -434,11 +441,11 @@ dec_signature_key(<<
 ->
     {#'ECPoint'{point = PK}, {'namedCurve', curvename2oid(Curve)}}.
 
--spec enc_signature_key(essh_public_key()) -> binary().
+-spec enc_signature_key(public_key:public_key()) -> binary().
 enc_signature_key(SignatureKey) ->
     <<?BINARY((key_type(SignatureKey))), (enc_pubkey(SignatureKey))/binary>>.
 
--spec enc_private_key_cert(essh_private_key()) -> binary().
+-spec enc_private_key_cert(public_key:private_key()) -> binary().
 enc_private_key_cert(#'ECPrivateKey'{
     parameters = {'namedCurve', ?'id-Ed25519'},
     'privateKey' = Priv,
@@ -462,7 +469,7 @@ enc_private_key_cert(#'ECPrivateKey'{
 enc_private_key_cert(#'DSAPrivateKey'{x = X}) ->
     mpint(X).
 
--spec enc_private_key(essh_private_key()) -> binary().
+-spec enc_private_key(public_key:private_key()) -> binary().
 enc_private_key(#'RSAPrivateKey'{
     modulus = N,
     'publicExponent' = E,
@@ -518,18 +525,17 @@ curvename2oid(<<"nistp256">>) -> ?secp256r1;
 curvename2oid(<<"nistp384">>) -> ?secp384r1;
 curvename2oid(<<"nistp521">>) -> ?secp521r1.
 
--spec oid2curvename(?secp256r1 | ?secp384r1 | ?secp521r1) -> binary().
 oid2curvename(?secp256r1) -> <<"nistp256">>;
 oid2curvename(?secp384r1) -> <<"nistp384">>;
 oid2curvename(?secp521r1) -> <<"nistp521">>.
 
--spec key_type(essh_public_key()) -> binary().
+-spec key_type(public_key:public_key()) -> binary().
 key_type(#'RSAPublicKey'{}) -> <<"ssh-rsa">>;
 key_type({_, #'Dss-Parms'{}}) -> <<"ssh-dss">>;
 key_type({#'ECPoint'{}, {'namedCurve', ?'id-Ed25519'}}) -> <<"ssh-ed25519">>;
 key_type({#'ECPoint'{}, {'namedCurve', Oid}}) -> <<"ecdsa-sha2-", (oid2curvename(Oid))/binary>>.
 
--spec pubkey(essh_private_key()) -> essh_public_key().
+-spec pubkey(public_key:private_key()) -> public_key:public_key().
 pubkey(#'RSAPrivateKey'{'publicExponent' = E, modulus = N}) ->
     #'RSAPublicKey'{'publicExponent' = E, modulus = N};
 pubkey(#'DSAPrivateKey'{p = P, q = Q, g = G, y = Y}) ->
