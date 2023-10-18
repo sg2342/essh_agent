@@ -1,6 +1,6 @@
 -module(essh_cert).
 
--export([key_sign/2, agent_sign/3, verify/1]).
+-export([key_sign/2, agent_sign/3, verify/1, verify1/4]).
 -export([signinfo/1, key_sign1/3, digest_type/1]).
 
 -include_lib("public_key/include/public_key.hrl").

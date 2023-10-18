@@ -1,5 +1,6 @@
 -module(essh_mpint_SUITE).
 
+-dialyzer([{nowarn_function, prop_mpint_case/1}]).
 -export([all/0, init_per_suite/1, end_per_suite/1, prop_mpint_case/1]).
 
 -include_lib("common_test/include/ct.hrl").

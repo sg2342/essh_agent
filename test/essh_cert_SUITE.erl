@@ -163,19 +163,10 @@ cert_of_ids(Agent) ->
     Cert.
 
 generate_testkeys(Dir) ->
-    ok = file:make_dir(Dir),
-    L0 = [
-        {undefined, "rsa", "RSA"},
-        {undefined, "dsa", "DSA"},
-        {undefined, "ed25519", "ED25519"},
-        {undefined, "ecdsa", "ECDSA"},
-        {"384", "ecdsa", "ECDSA384"},
-        {"521", "ecdsa", "ECDSA521"}
-    ],
-    L = [{Bits, Type, filename:join(Dir, Name)} || {Bits, Type, Name} <- L0],
-    ok = lists:foreach(fun generate_testkeys1/1, L),
+    tst_util:generate_testkeys(Dir),
+    L = tst_util:key_names(),
     lists:foreach(
-        fun({_, _, K}) ->
+        fun(K) ->
             {0, _} = tst_util:spwn(
                 [
                     "ssh-keygen",
@@ -193,39 +184,6 @@ generate_testkeys(Dir) ->
                 []
             )
         end,
-        L0
+        L
     ),
     ok.
-
-generate_testkeys1({undefined, Type, OutputKeyfile}) ->
-    {0, _} = tst_util:spwn(
-        [
-            "ssh-keygen",
-            "-N",
-            "",
-            "-C",
-            "some comment",
-            "-t",
-            Type,
-            "-f",
-            OutputKeyfile
-        ],
-        []
-    );
-generate_testkeys1({Bits, Type, OutputKeyfile}) ->
-    {0, _} = tst_util:spwn(
-        [
-            "ssh-keygen",
-            "-N",
-            "",
-            "-C",
-            "some comment",
-            "-b",
-            Bits,
-            "-t",
-            Type,
-            "-f",
-            OutputKeyfile
-        ],
-        []
-    ).
