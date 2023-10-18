@@ -167,17 +167,7 @@ add_certificate(Config) ->
     Cert = cert_of_ids(Agent),
     ok = essh_agentc:remove_all_identities(Agent),
     {ok, KeyBin} = file:read_file(filename:join(KeyDir, "id_ed25519")),
-    Key =
-        case ssh_file:decode(KeyBin, openssh_key_v1) of
-            [{#'ECPrivateKey'{} = K, _}, _] ->
-                K;
-            [{{ed_pri, ed25519, Pub, Priv}, _}, _] ->
-                #'ECPrivateKey'{
-                    'privateKey' = Priv,
-                    'publicKey' = Pub,
-                    parameters = {'namedCurve', ?'id-Ed25519'}
-                }
-        end,
+    [{#'ECPrivateKey'{} = Key, _}, _] = ssh_file:decode(KeyBin, openssh_key_v1),
     ok = essh_agentc:add_identity(Agent, Key, Cert, <<>>),
     Cert = cert_of_ids(Agent),
     ok = essh_agentc:remove_all_identities(Agent),
@@ -229,18 +219,7 @@ dsa_key(Config) ->
     public_key:pem_entry_decode(hd(public_key:pem_decode(PemBin))).
 
 generate_testkeys(Dir) ->
-    ok = file:make_dir(Dir),
-    L0 = [
-        {undefined, "rsa", "RSA"},
-        {undefined, "dsa", "DSA"},
-        {undefined, "ed25519", "ED25519"},
-        {undefined, "ecdsa", "ECDSA"},
-        {"384", "ecdsa", "ECDSA384"},
-        {"521", "ecdsa", "ECDSA521"},
-        {undefined, "ed25519", "id_ed25519"}
-    ],
-    L = [{Bits, Type, filename:join(Dir, Name)} || {Bits, Type, Name} <- L0],
-    ok = lists:foreach(fun generate_testkeys1/1, L),
+    tst_util:generate_testkeys(Dir),
     {0, _} = tst_util:spwn(
         [
             "ssh-keygen",
@@ -258,39 +237,6 @@ generate_testkeys(Dir) ->
         []
     ),
     ok.
-
-generate_testkeys1({undefined, Type, OutputKeyfile}) ->
-    {0, _} = tst_util:spwn(
-        [
-            "ssh-keygen",
-            "-N",
-            "",
-            "-C",
-            "some comment",
-            "-t",
-            Type,
-            "-f",
-            OutputKeyfile
-        ],
-        []
-    );
-generate_testkeys1({Bits, Type, OutputKeyfile}) ->
-    {0, _} = tst_util:spwn(
-        [
-            "ssh-keygen",
-            "-N",
-            "",
-            "-C",
-            "some comment",
-            "-b",
-            Bits,
-            "-t",
-            Type,
-            "-f",
-            OutputKeyfile
-        ],
-        []
-    ).
 
 cert_of_ids(Agent) ->
     {ok, L} = essh_agentc:request_identities(Agent),
