@@ -10,12 +10,12 @@
 -type essh_sign_request() ::
     #{
         public_key := public_key:public_key(),
-        serial := 0..18446744073709551615,
+        serial := essh_pkt:essh_serial(),
         cert_type := host | user,
         key_id := binary(),
         valid_principals := [binary()],
-        valid_before := 0..18446744073709551615,
-        valid_after := 0..18446744073709551615,
+        valid_before := 0..16#ff_ff_ff_ff_ff_ff_ff_ff,
+        valid_after := 0..16#ff_ff_ff_ff_ff_ff_ff_ff,
         critical_options := [{binary(), binary()}],
         extensions := [{binary(), binary()}]
     }.

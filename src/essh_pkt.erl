@@ -9,6 +9,8 @@
 
 -export([enc_cert/1, dec_cert/1]).
 
+-export([enc_krl/1, dec_krl/1]).
+
 -export([enc_constraints/1]).
 
 -export([enc_tbs/1, key_type/1, oid2curvename/1, mpint/1, pubkey/1]).
@@ -17,19 +19,22 @@
 
 -include_lib("public_key/include/public_key.hrl").
 -include("essh_agent_constants.hrl").
+-include("essh_krl_constants.hrl").
 -include("essh_binary.hrl").
+
+-type essh_serial() :: 1..16#ff_ff_ff_ff_ff_ff_ff_ff.
 
 -type essh_certificate() ::
     #{
         type_info := binary(),
         nonce := binary(),
         public_key := public_key:public_key(),
-        serial := 0..18446744073709551615,
+        serial := essh_serial(),
         cert_type := host | user,
         key_id := binary(),
         valid_principals := [binary()],
-        valid_before := 0..18446744073709551615,
-        valid_after := 0..18446744073709551615,
+        valid_before := 0..16#ff_ff_ff_ff_ff_ff_ff_ff,
+        valid_after := 0..16#ff_ff_ff_ff_ff_ff_ff_ff,
         critical_options := [{binary(), binary()}],
         extensions := [{binary(), binary()}],
         reserved := binary(),
@@ -42,12 +47,12 @@
         type_info := binary(),
         nonce := binary(),
         public_key := public_key:public_key(),
-        serial := 0..18446744073709551615,
+        serial := essh_serial(),
         cert_type := host | user,
         key_id := binary(),
         valid_principals := [binary()],
-        valid_before := 0..18446744073709551615,
-        valid_after := 0..18446744073709551615,
+        valid_before := 0..16#ff_ff_ff_ff_ff_ff_ff_ff,
+        valid_after := 0..16#ff_ff_ff_ff_ff_ff_ff_ff,
         critical_options := [{binary(), binary()}],
         extensions := [{binary(), binary()}],
         reserved := binary(),
@@ -61,11 +66,48 @@
 
 -type essh_pub_or_cert() :: essh_certificate() | public_key:public_key().
 
+-type essh_krl_extension() :: #{
+    extension_name := binary(),
+    is_critical := boolean(),
+    extension_contents := binary()
+}.
+
+-type essh_krl_certificates() ::
+    #{
+        ca_key := public_key:public_key() | undefined,
+        reserved := binary(),
+        sections := [
+            {serial_list, [essh_serial()]}
+            | {serial_range, #{min := essh_serial(), max := essh_serial()}}
+            | {serial_bitmap, #{offset := essh_serial(), bitmap := binary()}}
+            | {key_id, [binary()]}
+            | {cert_extension, essh_krl_extension()}
+        ]
+    }.
+-type essh_krl() :: #{
+    krl_version := 0..16#ff_ff_ff_ff_ff_ff_ff_ff,
+    generated_date := 0..16#ff_ff_ff_ff_ff_ff_ff_ff,
+    flags := 0..16#ff_ff_ff_ff_ff_ff_ff_ff,
+    reserved := binary(),
+    comment := binary(),
+    sections := [
+        {certificates, essh_krl_certificates()}
+        | {explicit_key, [public_key:public_key()]}
+        | {fingerprint_sha1, [PublicKeyHash :: binary()]}
+        | {fingerprint_sha256, [PublicKeyHash :: binary()]}
+        | {extension, essh_krl_extension()}
+    ]
+}.
+
 -export_type([
+    essh_serial/0,
     essh_certificate/0,
     essh_tbs/0,
     essh_pub_or_cert/0,
-    essh_constraint/0
+    essh_constraint/0,
+    essh_krl/0,
+    essh_krl_certificates/0,
+    essh_krl_extension/0
 ]).
 
 -spec enc_identities_answer([{essh_pub_or_cert(), Comment :: binary()}]) ->
@@ -543,6 +585,161 @@ pubkey(#'DSAPrivateKey'{p = P, q = Q, g = G, y = Y}) ->
 pubkey(#'ECPrivateKey'{parameters = C, 'publicKey' = Q}) ->
     {#'ECPoint'{point = Q}, C}.
 
+-spec enc_krl(essh_krl()) -> binary().
+enc_krl(#{
+    krl_version := KrlVersion,
+    generated_date := GeneratedDate,
+    flags := Flags,
+    reserved := Reserved,
+    comment := Comment,
+    sections := Sections
+}) ->
+    Header =
+        <<"SSHKRL\n", 0, ?UINT32(1), ?UINT64(KrlVersion), ?UINT64(GeneratedDate), ?UINT64(Flags),
+            ?BINARY(Reserved), ?BINARY(Comment)>>,
+    list_to_binary([Header | lists:map(fun enc_krl_sec/1, Sections)]).
+
+enc_krl_sec({extension, Extension}) ->
+    <<?KRL_SECTION_EXTENSION, ?BINARY((enc_krl_extension(Extension)))>>;
+enc_krl_sec({cert_extension, Extension}) ->
+    <<?KRL_SECTION_CERT_EXTENSION, ?BINARY((enc_krl_extension(Extension)))>>;
+enc_krl_sec({fingerprint_sha1, L}) ->
+    <<?KRL_SECTION_FINGERPRINT_SHA1, ?BINARY((enc_sl(L)))>>;
+enc_krl_sec({fingerprint_sha256, L}) ->
+    <<?KRL_SECTION_FINGERPRINT_SHA256, ?BINARY((enc_sl(L)))>>;
+enc_krl_sec({explicit_key, L}) ->
+    <<?KRL_SECTION_EXPLICIT_KEY, ?BINARY((enc_sl(lists:map(fun enc_signature_key/1, L))))>>;
+enc_krl_sec({certificates, #{ca_key := undefined, reserved := Reserved, sections := Sections}}) ->
+    Blob = list_to_binary([
+        <<?BINARY(<<>>), ?BINARY(Reserved)>>
+        | lists:map(fun enc_krl_sec/1, Sections)
+    ]),
+    <<?KRL_SECTION_CERTIFICATES, ?BINARY(Blob)>>;
+enc_krl_sec({certificates, #{ca_key := CaKey, reserved := Reserved, sections := Sections}}) ->
+    Blob = list_to_binary([
+        <<?BINARY((enc_signature_key(CaKey))), ?BINARY(Reserved)>>
+        | lists:map(fun enc_krl_sec/1, Sections)
+    ]),
+    <<?KRL_SECTION_CERTIFICATES, ?BINARY(Blob)>>;
+enc_krl_sec({serial_list, L}) ->
+    <<?KRL_SECTION_CERT_SERIAL_LIST, ?BINARY((enc_uint64list(L)))>>;
+enc_krl_sec({serial_range, #{min := Min, max := Max}}) ->
+    Blob = <<?UINT64(Min), ?UINT64(Max)>>,
+    <<?KRL_SECTION_CERT_SERIAL_RANGE, ?BINARY(Blob)>>;
+enc_krl_sec({serial_bitmap, #{offset := Offset, bitmap := Bitmap}}) ->
+    Blob = <<?UINT64(Offset), ?BINARY(Bitmap)>>,
+    <<?KRL_SECTION_CERT_SERIAL_BITMAP, ?BINARY(Blob)>>;
+enc_krl_sec({key_id, L}) ->
+    <<?KRL_SECTION_CERT_KEY_ID, ?BINARY((enc_sl(L)))>>.
+
+enc_krl_extension(#{
+    extension_name := ExtensionName,
+    is_critical := IsCritical,
+    extension_contents := ExtensionContents
+}) ->
+    CriticalB =
+        case IsCritical of
+            true -> 1;
+            false -> 0
+        end,
+    <<?BINARY(ExtensionName), ?BYTE(CriticalB), ?BINARY(ExtensionContents)>>.
+
+-spec dec_krl(binary()) -> essh_krl().
+dec_krl(
+    <<"SSHKRL\n", 0, ?UINT32(FormatVersion), ?UINT64(KrlVersion), ?UINT64(GeneratedDate),
+        ?UINT64(Flags), ?BINARY(Reserved, _ReservedL), ?BINARY(Comment, _CommentL),
+        Sections/binary>>
+) when FormatVersion == 1 ->
+    dec_krl(Sections, #{
+        krl_version => KrlVersion,
+        generated_date => GeneratedDate,
+        flags => Flags,
+        reserved => Reserved,
+        comment => Comment,
+        sections => []
+    }).
+
+dec_krl(<<>>, #{sections := Sections} = M) ->
+    M#{sections => lists:reverse(Sections)};
+dec_krl(
+    <<?KRL_SECTION_EXTENSION, ?BINARY(Extension, ExtensionL), Rest/binary>>,
+    #{sections := Sections} = M
+) ->
+    dec_krl(Rest, M#{sections => [{extension, dec_krl_extension(Extension)} | Sections]});
+dec_krl(
+    <<?KRL_SECTION_FINGERPRINT_SHA256, ?BINARY(Hashes, _HashesL), Rest/binary>>,
+    #{sections := Sections} = M
+) ->
+    dec_krl(Rest, M#{sections => [{fingerprint_sha256, dec_sl(Hashes, [])} | Sections]});
+dec_krl(
+    <<?KRL_SECTION_FINGERPRINT_SHA1, ?BINARY(Hashes, _HashesL), Rest/binary>>,
+    #{sections := Sections} = M
+) ->
+    dec_krl(Rest, M#{sections => [{fingerprint_sha1, dec_sl(Hashes, [])} | Sections]});
+dec_krl(
+    <<?KRL_SECTION_EXPLICIT_KEY, ?BINARY(Keys, _KeysL), Rest/binary>>,
+    #{sections := Sections} = M
+) ->
+    L = lists:map(fun dec_signature_key/1, dec_sl(Keys, [])),
+    dec_krl(Rest, M#{sections => [{explicit_key, L} | Sections]});
+dec_krl(
+    <<?KRL_SECTION_CERTIFICATES, ?BINARY(Certificates, _CertificatesL), Rest/binary>>,
+    #{sections := Sections} = M
+) ->
+    dec_krl(Rest, M#{sections => [{certificates, dec_krl_cert(Certificates)} | Sections]}).
+
+dec_krl_cert(<<?BINARY(_CaKey, CaKeyL), ?BINARY(Reserved, _ReservedL), Sections/binary>>) when
+    CaKeyL == 0
+->
+    dec_krl_cert(Sections, #{reserved => Reserved, ca_key => undefined, sections => []});
+dec_krl_cert(<<?BINARY(CaKey, _CaKeyL), ?BINARY(Reserved, _ReservedL), Sections/binary>>) ->
+    dec_krl_cert(Sections, #{
+        reserved => Reserved, ca_key => dec_signature_key(CaKey), sections => []
+    }).
+
+dec_krl_cert(<<>>, #{sections := Sections} = M) ->
+    M#{sections => lists:reverse(Sections)};
+dec_krl_cert(
+    <<?KRL_SECTION_CERT_EXTENSION, ?BINARY(Extension, ExtensionL), Rest/binary>>,
+    #{sections := Sections} = M
+) ->
+    dec_krl_cert(Rest, M#{sections => [{cert_extension, dec_krl_extension(Extension)} | Sections]});
+dec_krl_cert(
+    <<?KRL_SECTION_CERT_KEY_ID, ?BINARY(KeyIds, _KeyIdsL), Rest/binary>>,
+    #{sections := Sections} = M
+) ->
+    dec_krl_cert(Rest, M#{sections => [{key_id, dec_sl(KeyIds, [])} | Sections]});
+dec_krl_cert(
+    <<?KRL_SECTION_CERT_SERIAL_BITMAP, ?BINARY(Blob, _BlobL), Rest/binary>>,
+    #{sections := Sections} = M
+) ->
+    <<?UINT64(Offset), ?BINARY(Bitmap, _BitmapL)>> = Blob,
+    dec_krl_cert(Rest, M#{
+        sections => [{serial_bitmap, #{offset => Offset, bitmap => Bitmap}} | Sections]
+    });
+dec_krl_cert(
+    <<?KRL_SECTION_CERT_SERIAL_RANGE, ?BINARY(Blob, _BlobL), Rest/binary>>,
+    #{sections := Sections} = M
+) ->
+    <<?UINT64(Min), ?UINT64(Max)>> = Blob,
+    dec_krl_cert(Rest, M#{sections => [{serial_range, #{min => Min, max => Max}} | Sections]});
+dec_krl_cert(
+    <<?KRL_SECTION_CERT_SERIAL_LIST, ?BINARY(List, _ListL), Rest/binary>>,
+    #{sections := Sections} = M
+) ->
+    dec_krl_cert(Rest, M#{sections => [{serial_list, dec_uint64list(List, [])} | Sections]}).
+
+dec_krl_extension(<<
+    ?BINARY(ExtensionName, _ExtensionNameL),
+    ?BYTE(IsCritical),
+    ?BINARY(ExtensionContents, _ExtensionContentsL)
+>>) ->
+    #{
+        extension_name => ExtensionName,
+        is_critical => IsCritical =/= 0,
+        extension_contents => ExtensionContents
+    }.
+
 enc_cert_type(user) -> <<?UINT32(1)>>;
 enc_cert_type(host) -> <<?UINT32(2)>>.
 
@@ -560,6 +757,11 @@ dec_kvs(<<>>, Acc) ->
     lists:reverse(Acc);
 dec_kvs(<<?BINARY(K, _KLen), ?BINARY(V, _VLen), Rest/binary>>, Acc) ->
     dec_kvs(Rest, [{K, V} | Acc]).
+
+enc_uint64list(L) -> list_to_binary([<<?UINT64(V)>> || V <- L]).
+
+dec_uint64list(<<>>, Acc) -> lists:reverse(Acc);
+dec_uint64list(<<?UINT64(I), Rest/binary>>, Acc) -> dec_uint64list(Rest, [I | Acc]).
 
 %%%----------------------------------------------------------------
 %%% Multi Precision Integer encoding
