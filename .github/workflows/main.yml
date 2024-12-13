@@ -16,7 +16,7 @@ jobs:
 
     strategy:
       matrix:
-        otp_version: [26]
+        otp_version: [27]
         os: [ubuntu-latest]
 
     container:
@@ -25,4 +25,4 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Check
-      run: ERL_AFLAGS="-enable-feature maybe_expr" rebar3 as test check
+      run: rebar3 as test check
