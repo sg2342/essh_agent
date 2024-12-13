@@ -54,7 +54,9 @@ request_ids(Config) ->
     Ssh ! stop.
 
 timeout1(_Confifg) ->
-    {error, timeout} = essh_agentc:request_identities({remote, self()}).
+    {error, timeout} = essh_agentc:request_identities(
+        {remote, #{connection => self(), timeout => 100}}
+    ).
 
 no_agent(Config) ->
     Port = ?PORT,

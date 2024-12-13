@@ -20,9 +20,12 @@
 -include("essh_binary.hrl").
 -include("essh_agent_constants.hrl").
 
+-define(DEFAULT_REMOTE_TIMEOUT, 1000).
+
 -type essh_agent() ::
     {local, SshAuthSock :: file:name_all()}
     | {remote, SshConnection :: pid()}
+    | {remote, #{connection := pid(), timeout := pos_integer()}}
     | {function, function()}.
 
 -export_type([essh_agent/0]).
@@ -241,7 +244,11 @@ simple_req1({ok, _}) -> {error, unexpected_data}.
 req({local, _} = AuthSock, Req) when is_binary(Req) ->
     local_req(AuthSock, Req);
 req({remote, Connection}, Req) when is_binary(Req), is_pid(Connection) ->
-    remote_req(Connection, Req);
+    remote_req(Connection, Req, ?DEFAULT_REMOTE_TIMEOUT);
+req({remote, #{connection := Connection, timeout := Timeout}}, Req) when
+    is_binary(Req), is_pid(Connection), is_integer(Timeout), Timeout > 0
+->
+    remote_req(Connection, Req, Timeout);
 req({function, F}, Req) when is_binary(Req), is_function(F) -> F(Req).
 
 local_req(AuthSock, Req) ->
@@ -259,39 +266,38 @@ local_req2(ok, Sock) ->
     _ = gen_tcp:close(Sock),
     Resp.
 
--define(TIMEOUT, 1000).
-remote_req(Connection, Req) ->
+remote_req(Connection, Req, Timeout) ->
     Self = self(),
-    Pid = spawn(fun() -> Self ! {remote_req, remote_req1(Connection, Req)} end),
+    Pid = spawn(fun() -> Self ! {remote_req, remote_req1(Connection, Req, Timeout)} end),
     receive
         {remote_req, R} -> R
-    after 2000 ->
+    after Timeout * 2 ->
         exit(Pid, kill),
         {error, timeout}
     end.
 
-remote_req1(Connection, Req) ->
+remote_req1(Connection, Req, Timeout) ->
     MaybeChannel =
-        ssh_connection:open_channel(Connection, "auth-agent@openssh.com", <<>>, ?TIMEOUT),
-    remote_req2(MaybeChannel, Connection, Req).
+        ssh_connection:open_channel(Connection, "auth-agent@openssh.com", <<>>, Timeout),
+    remote_req2(MaybeChannel, Connection, Req, Timeout).
 
-remote_req2({ok, Channel}, Connection, Req) ->
+remote_req2({ok, Channel}, Connection, Req, Timeout) ->
     MaybeOk = ssh_connection:send(Connection, Channel, 0, <<?BINARY(Req)>>),
-    remote_req3(MaybeOk, Channel, Connection);
-remote_req2(E, _, _) ->
+    remote_req3(MaybeOk, Channel, Connection, Timeout);
+remote_req2(E, _, _, _) ->
     {error, E}.
 
-remote_req3({error, _} = E, Channel, Connection) ->
+remote_req3({error, _} = E, Channel, Connection, _) ->
     _ = ssh_connection:close(Connection, Channel),
     E;
-remote_req3(ok, Channel, Connection) ->
+remote_req3(ok, Channel, Connection, Timeout) ->
     R =
         receive
             {ssh_cm, Connection, {data, Channel, 0, <<?BINARY(Data, _DataLen)>>}} ->
                 {ok, Data};
             Unexpected ->
                 {error, {unexpected, Unexpected}}
-        after ?TIMEOUT -> {error, timeout}
+        after Timeout -> {error, timeout}
         end,
     _ = ssh_connection:close(Connection, Channel),
     R.
