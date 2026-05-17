@@ -148,14 +148,14 @@ dec_key_or_cert(Bin) ->
         essh_constraint()
     ]}.
 dec_add_id(<<?BINARY(TypeInfo, _TypeInfoLen), ?BINARY(CertBlob, _CertBlobLen), Rest/binary>>) when
-    TypeInfo == <<"ssh-ed25519-cert-v01@openssh.com">>;
-    TypeInfo == <<"ssh-rsa-cert-v01@openssh.com">>;
-    TypeInfo == <<"rsa-sha2-256-cert-v01@openssh.com">>;
-    TypeInfo == <<"rsa-sha2-512-cert-v01@openssh.com">>;
-    TypeInfo == <<"ssh-dss-cert-v01@openssh.com">>;
-    TypeInfo == <<"ecdsa-sha2-nistp256-cert-v01@openssh.com">>;
-    TypeInfo == <<"ecdsa-sha2-nistp384-cert-v01@openssh.com">>;
-    TypeInfo == <<"ecdsa-sha2-nistp521-cert-v01@openssh.com">>
+    TypeInfo == <<"ssh-ed25519-cert-v01@openssh.com">> orelse
+        TypeInfo == <<"ssh-rsa-cert-v01@openssh.com">> orelse
+        TypeInfo == <<"rsa-sha2-256-cert-v01@openssh.com">> orelse
+        TypeInfo == <<"rsa-sha2-512-cert-v01@openssh.com">> orelse
+        TypeInfo == <<"ssh-dss-cert-v01@openssh.com">> orelse
+        TypeInfo == <<"ecdsa-sha2-nistp256-cert-v01@openssh.com">> orelse
+        TypeInfo == <<"ecdsa-sha2-nistp384-cert-v01@openssh.com">> orelse
+        TypeInfo == <<"ecdsa-sha2-nistp521-cert-v01@openssh.com">>
 ->
     dec_add_id_c(dec_cert(CertBlob), TypeInfo, Rest);
 dec_add_id(<<
@@ -218,9 +218,9 @@ dec_add_id(<<
     ?BINARY(Comment, _CommentLen),
     Constraints/binary
 >>) when
-    (TypeInfo == <<"ecdsa-sha2-nistp256">>) andalso (C == <<"nistp256">>);
-    (TypeInfo == <<"ecdsa-sha2-nistp384">>) andalso (C == <<"nistp384">>);
-    (TypeInfo == <<"ecdsa-sha2-nistp521">>) andalso (C == <<"nistp521">>)
+    ((TypeInfo == <<"ecdsa-sha2-nistp256">>) andalso (C == <<"nistp256">>)) orelse
+        ((TypeInfo == <<"ecdsa-sha2-nistp384">>) andalso (C == <<"nistp384">>)) orelse
+        ((TypeInfo == <<"ecdsa-sha2-nistp521">>) andalso (C == <<"nistp521">>))
 ->
     Key = #'ECPrivateKey'{
         parameters = {'namedCurve', curvename2oid(C)},

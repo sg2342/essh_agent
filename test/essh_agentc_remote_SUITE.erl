@@ -44,11 +44,7 @@ request_ids(Config) ->
     timer:sleep(500),
     Openssh = openssh_connection(Port, Config),
     timer:sleep(500),
-    {ok, Connection} =
-        receive
-            {new_connection, C} -> {ok, C}
-        after 500 -> timeout
-        end,
+    {ok, Connection} = receive_connection(),
     {ok, [_ | _]} = essh_agentc:request_identities({remote, Connection}),
     Openssh ! close,
     Ssh ! stop.
@@ -67,14 +63,16 @@ no_agent(Config) ->
     timer:sleep(500),
     Openssh = openssh_connection_no_agent(Port, Config),
     timer:sleep(500),
-    {ok, Connection} =
-        receive
-            {new_connection, C} -> {ok, C}
-        after 500 -> timeout
-        end,
+    {ok, Connection} = receive_connection(),
     {error, {open_error, _, _, _}} = essh_agentc:request_identities({remote, Connection}),
     Openssh ! close,
     Ssh ! stop.
+
+receive_connection() ->
+    receive
+        {new_connection, C} -> {ok, C}
+    after 500 -> timeout
+    end.
 
 openssh_connection(Port, Config) ->
     SockPath = ?config(agent_sock_path, Config),
