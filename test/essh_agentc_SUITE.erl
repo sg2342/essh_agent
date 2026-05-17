@@ -99,7 +99,7 @@ remove_identity(Config) ->
             ok = essh_agentc:remove_identity(Agent, Key),
             [] = agent_ids(Config)
         end,
-        ["RSA", "DSA", "ECDSA", "ED25519"]
+        ["RSA", "ECDSA", "ED25519"]
     ).
 
 remove_all_identities(Config) ->
@@ -138,7 +138,7 @@ remove_smartcard_key(Config) ->
 lock(Config) ->
     Agent = {local, ?config(agent_sock_path, Config)},
     Password = <<"password">>,
-    tst_util:add_openssh_key("DSA", Config),
+    tst_util:add_openssh_key("ECDSA", Config),
     {error, agent_failure} = essh_agentc:unlock(Agent, Password),
     [{Key, Comment}] = agent_ids(Config),
     ok = essh_agentc:lock(Agent, Password),
@@ -209,12 +209,12 @@ cover2(Config) ->
         public_key:generate_key(C),
     {error, agent_failure} =
         essh_agentc:sign_request(Agent, <<>>, {#'ECPoint'{point = PK}, C}),
-    ok = essh_agentc:add_identity(Agent, dsa_key(Config), <<"comment">>),
+    ok = essh_agentc:add_identity(Agent, rsa_key(Config), <<"comment">>),
     [{DSApub, _}] = agent_ids(Config),
     ok = essh_agentc:remove_identity(Agent, DSApub).
 
-dsa_key(Config) ->
-    FN = filename:join(?config(data_dir, Config), "dsa.pem"),
+rsa_key(Config) ->
+    FN = filename:join(?config(data_dir, Config), "rsa.pem"),
     {ok, PemBin} = file:read_file(FN),
     public_key:pem_entry_decode(hd(public_key:pem_decode(PemBin))).
 

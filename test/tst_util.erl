@@ -78,13 +78,12 @@ stop_openssh_agent(Config) ->
         (lists:keydelete(agent_os_pid, 1, Config))
     ).
 
-key_names() -> ["RSA", "DSA", "ED25519", "ECDSA", "ECDSA384", "ECDSA521"].
+key_names() -> ["RSA", "ED25519", "ECDSA", "ECDSA384", "ECDSA521"].
 
 generate_testkeys(Dir) ->
     ok = file:make_dir(Dir),
     L0 = [
         {undefined, "rsa", "RSA"},
-        {undefined, "dsa", "DSA"},
         {undefined, "ed25519", "ED25519"},
         {undefined, "ecdsa", "ECDSA"},
         {"384", "ecdsa", "ECDSA384"},

@@ -17,7 +17,6 @@
     key_sign_ed25519/1,
     key_sign_rsa/1,
     key_sign_ecdsa/1,
-    key_sign_dsa/1,
     agent_sign/1
 ]).
 
@@ -28,7 +27,6 @@ all() ->
         key_sign_ed25519,
         key_sign_rsa,
         key_sign_ecdsa,
-        key_sign_dsa,
         agent_sign
     ].
 
@@ -58,7 +56,7 @@ verify(Config) ->
             true = essh_cert:verify(Cert),
             ok = essh_agentc:remove_all_identities(Agent)
         end,
-        ["RSA", "DSA", "ED25519", "ECDSA", "ECDSA384", "ECDSA521"]
+        tst_util:key_names()
     ).
 
 verify_file(Config) ->
@@ -102,19 +100,6 @@ key_sign_ecdsa(Config) ->
     #'ECPrivateKey'{'publicKey' = PK} = SignatureKey = public_key:generate_key(C),
     Request = (request())#{
         public_key => {#'ECPoint'{point = PK}, C},
-        extensions => [{<<"force-command">>, <<"/usr/bin/id">>}]
-    },
-    Cert = essh_cert:key_sign(Request, SignatureKey),
-    true = essh_cert:verify(Cert),
-    Agent = {local, ?config(agent_sock_path, Config)},
-    ok = essh_agentc:add_identity(Agent, SignatureKey, Cert, <<"comment">>),
-    Cert = cert_of_ids(Agent).
-
-key_sign_dsa(Config) ->
-    {ok, KeyBin} = file:read_file(filename:join(?config(key_dir, Config), "DSA")),
-    [{SignatureKey, _}, {PublicKey, _}] = ssh_file:decode(KeyBin, openssh_key_v1),
-    Request = (request())#{
-        public_key => PublicKey,
         extensions => [{<<"force-command">>, <<"/usr/bin/id">>}]
     },
     Cert = essh_cert:key_sign(Request, SignatureKey),
