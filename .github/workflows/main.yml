@@ -16,7 +16,7 @@ jobs:
 
     strategy:
       matrix:
-        otp_version: [27]
+        otp_version: [28]
         os: [ubuntu-latest]
 
     container:
